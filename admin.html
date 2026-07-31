@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Admin Harian — Sistem Gudang</title>
+<link rel="stylesheet" href="assets/app.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.111.0/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="config.js"></script>
+</head>
+<body>
+
+<header>
+  <span class="brand">🗂️ Admin Harian</span>
+  <span id="siapa" class="tag brand"></span>
+  <span class="sp"></span>
+  <span id="led" class="led wait"><i></i>memeriksa…</span>
+  <div id="jam"></div>
+  <button class="ghost sm" onclick="keluar()">Keluar</button>
+</header>
+
+<nav id="tabs">
+  <button data-tab="impor" class="on">Unggah Label</button>
+  <button data-tab="stok">Stok Saat Ini</button>
+  <button data-tab="retur">Retur COD</button>
+</nav>
+
+<main>
+
+<!-- ================= IMPOR ================= -->
+<section id="tab-impor">
+  <div class="panel">
+    <h2>Unggah PDF label pengiriman</h2>
+    <p class="sub">Ambil file label dari Shopee Seller Centre, lalu taruh di sini. Satu file boleh berisi ratusan label.</p>
+    <div class="drop" id="drop">
+      Tarik file PDF ke sini, atau <a href="#" id="pilih">pilih file</a>
+      <input type="file" id="berkas" accept="application/pdf" multiple class="hide">
+    </div>
+    <p id="proses" class="mute sm hide" style="margin-top:12px"></p>
+  </div>
+
+  <div id="ringkas"></div>
+  <div id="pratinjau"></div>
+</section>
+
+<!-- ================= STOK (baca saja) ================= -->
+<section id="tab-stok" class="hide">
+  <div class="panel">
+    <h2>Stok saat ini</h2>
+    <p class="sub">Hanya untuk dilihat. Perubahan stok dilakukan oleh Gudang dan Kepala Admin.</p>
+    <div class="row">
+      <div style="flex:1;min-width:220px"><input id="cari" placeholder="Cari SKU atau nama produk…"></div>
+      <button id="muat">Muat ulang</button>
+    </div>
+    <p id="jml" class="mute sm" style="margin-top:10px"></p>
+    <div class="scroll" style="margin-top:6px"><table>
+      <thead><tr><th>SKU</th><th>Produk</th><th>Variasi</th><th class="num">Stok</th></tr></thead>
+      <tbody id="barisStok"></tbody>
+    </table></div>
+  </div>
+</section>
+
+<!-- ================= RETUR COD ================= -->
+<section id="tab-retur" class="hide">
+  <div class="panel">
+    <h2>Ajukan retur COD</h2>
+    <p class="sub">Ketik nomor pesanan dan SKU yang kembali. Pengajuan ini <b>tidak langsung menambah stok</b> —
+      harus disetujui Kepala Admin dulu, lalu Gudang yang mengonfirmasi barangnya benar-benar sudah masuk.</p>
+    <div class="grid g2">
+      <div><label>Toko</label><select id="rtToko"></select></div>
+      <div><label>No. Pesanan <span style="color:var(--bad)">*</span></label><input id="rtOrder" placeholder="mis. 2607315AWP0WND"></div>
+      <div><label>No. Resi (opsional)</label><input id="rtResi" placeholder="mis. SPXID0656…"></div>
+      <div><label>Alasan retur</label><input id="rtAlasan" placeholder="mis. paket ditolak pembeli (COD)"></div>
+    </div>
+
+    <h3 style="font-size:14px;margin:20px 0 8px">Barang yang kembali</h3>
+    <div class="scroll" style="max-height:320px"><table>
+      <thead><tr><th style="width:44%">SKU</th><th>Variasi (opsional)</th><th class="num" style="width:100px">Jumlah</th><th style="width:50px"></th></tr></thead>
+      <tbody id="rtBaris"></tbody></table></div>
+    <div class="row" style="margin-top:10px">
+      <button id="rtTambahBaris">+ Baris</button>
+      <span class="mute sm">SKU boleh diketik langsung, atau ketik nama produk kalau SKU-nya tidak tahu.</span>
+    </div>
+    <div class="row" style="margin-top:16px">
+      <button class="primary" id="rtKirim" style="font-size:16px;padding:13px 24px">Ajukan ke Kepala Admin</button>
+      <span id="rtPesan" class="sm"></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="row" style="margin-bottom:6px">
+      <h2 style="flex:1">Riwayat pengajuan retur</h2>
+      <button id="rtMuat">Muat ulang</button>
+    </div>
+    <div class="scroll"><table>
+      <thead><tr><th>Tanggal</th><th>No. Pesanan</th><th>Barang</th><th>Alasan</th><th>Status</th><th>Catatan</th></tr></thead>
+      <tbody id="rtRiwayat"></tbody></table></div>
+  </div>
+</section>
+
+</main>
+
+<div id="antrean" class="antrean hide"></div>
+<div id="toast"></div>
+
+<script src="assets/core.js"></script>
+<script src="assets/parser.js"></script>
+<script>
+let TOKO = [], HASIL = [], BATCH = null;
+
+(async () => {
+  if (!await jagaHalaman('admin')) return;
+  pasangTab(['impor','stok','retur'], 'impor');
+  const { data } = await sb.from('shops').select('*').eq('active', true).order('name');
+  TOKO = data || [];
+})();
+window.onTab = t => {
+  if (t === 'stok'  && !stokRows.length) muatStok();
+  if (t === 'retur') { isiTokoRetur(); rtMuatRiwayat(); if (!$('rtBaris').children.length) rtBarisBaru(); }
+};
+
+/* ---------- unggah & baca PDF ---------- */
+const drop = $('drop'), berkas = $('berkas');
+$('pilih').onclick = e => { e.preventDefault(); berkas.click(); };
+berkas.onchange = () => { if (berkas.files.length) baca([...berkas.files]); berkas.value = ''; };
+['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => { const f = [...e.dataTransfer.files].filter(f => /pdf$/i.test(f.name)); if (f.length) baca(f); });
+
+async function baca(files) {
+  HASIL = []; BATCH = null;
+  $('ringkas').innerHTML = ''; $('pratinjau').innerHTML = '';
+  const p = $('proses'); p.classList.remove('hide');
+  try {
+    for (const f of files) {
+      p.textContent = 'Membaca ' + f.name + '…';
+      const r = await bacaPDF(f, (a, b) => p.textContent = 'Membaca ' + f.name + ' — halaman ' + a + ' dari ' + b);
+      r.forEach(o => o._file = f.name);
+      HASIL = HASIL.concat(r);
+    }
+  } catch (e) {
+    p.classList.add('hide');
+    $('ringkas').innerHTML = '<div class="kotak bad"><h3>Gagal membaca PDF</h3><p style="margin:0">' + esc(e.message) + '</p></div>';
+    return;
+  }
+  p.classList.add('hide');
+  await tampilkan();
+}
+
+async function tampilkan() {
+  const kirim = HASIL.filter(o => o.order_sn && o.items.length);
+  const gagal = HASIL.length - kirim.length;
+
+  // Tebak toko. Label Shopee memakai "Pengirim"; label TikTok memakai
+  // "NickName" — tapi TIDAK semua label TikTok mencetak NickName, jadi
+  // nama Pengirim dicoba juga.
+  const kandidat = [...new Set(kirim.flatMap(o => [o.nickname, o.sender_name, o.shop_name]).filter(Boolean))];
+  let tebak = null, cocokLewat = null;
+  for (const nm of kandidat) {
+    const { data } = await sb.rpc('shop_from_sender', { p_sender: nm });
+    if (data) { tebak = data; cocokLewat = nm; break; }
+  }
+  const pengirim = kandidat;
+
+  const opsi = TOKO.map(t => `<option value="${esc(t.shop_id)}"${t.shop_id === tebak ? ' selected' : ''}>${esc(t.name)}</option>`).join('');
+  const nBaris = kirim.reduce((a, o) => a + o.items.length, 0);
+  const nTanpaSku = kirim.reduce((a, o) => a + o.items.filter(i => !i.sku).length, 0);
+  const nSambung = kirim.filter(o => o.pages.length > 1).length;
+
+  $('ringkas').innerHTML = `
+  <div class="panel">
+    <div class="grid g4">
+      <div class="stat"><div class="n">${nf(kirim.length)}</div><div class="l">pesanan terbaca</div></div>
+      <div class="stat"><div class="n">${nf(nBaris)}</div><div class="l">baris barang</div></div>
+      <div class="stat"><div class="n" style="color:${nSambung ? 'var(--brand)' : 'inherit'}">${nf(nSambung)}</div><div class="l">label 2 halaman</div></div>
+      <div class="stat"><div class="n" style="color:${nTanpaSku ? 'var(--warn)' : 'inherit'}">${nf(nTanpaSku)}</div><div class="l">baris tanpa SKU</div></div>
+    </div>
+    <div class="row" style="margin-top:16px">
+      <div style="min-width:230px">
+        <label>Toko ${tebak ? '(terdeteksi dari "' + esc(cocokLewat) + '")' : '(tidak terdeteksi — pilih sendiri)'}</label>
+        <select id="toko">${opsi || '<option value="">— belum ada toko —</option>'}</select>
+      </div>
+      <div style="align-self:end"><button class="primary" id="tombolKirim">Kirim &amp; Periksa</button></div>
+      ${gagal ? `<span class="tag bad">${gagal} halaman tidak terbaca</span>` : ''}
+      ${pengirim.length ? `<span class="tag">Nama di label: ${esc(pengirim.join(' · '))}</span>` : ''}
+      ${!tebak && pengirim.length ? `<span class="tag warn">Tambahkan salah satu nama ini ke daftar toko di halaman Kepala Admin supaya lain kali otomatis</span>` : ''}
+    </div>
+    ${nTanpaSku ? `<p class="sm" style="margin:14px 0 0;color:var(--warn)"><b>Catatan:</b> ${nTanpaSku} baris tidak mencetak SKU di label. Sistem akan mencoba mencocokkan lewat nama produk. Yang tetap gagal akan ditandai merah di langkah berikutnya.</p>` : ''}
+  </div>`;
+
+  $('tombolKirim').onclick = kirimBatch;
+  gambarPratinjau(kirim);
+}
+
+function gambarPratinjau(kirim) {
+  $('pratinjau').innerHTML = `
+  <div class="panel">
+    <h2>Isi kiriman</h2>
+    <p class="sub">Periksa sekilas. Kalau ada jumlah yang salah baca, koreksi setelah menekan “Kirim &amp; Periksa”.</p>
+    <div class="scroll"><table>
+      <thead><tr><th>No. Pesanan</th><th>No. Resi</th><th>Penerima</th><th>SKU</th><th>Variasi</th><th class="num">Qty</th></tr></thead>
+      <tbody>${kirim.map(o => o.items.map((it, i) => `<tr>
+        ${i === 0 ? `<td class="mono" rowspan="${o.items.length}"><b>${esc(o.order_sn)}</b>${o.pages.length > 1 ? '<br><span class="tag brand">2 hal.</span>' : ''}</td>
+                     <td class="mono" rowspan="${o.items.length}">${esc(o.tracking_no || '')}</td>
+                     <td rowspan="${o.items.length}">${esc(o.buyer_name || '')}</td>` : ''}
+        <td class="mono">${it.sku ? '<b>' + esc(it.sku) + '</b>' : '<span class="tag warn">tanpa SKU</span>'}</td>
+        <td class="sm">${esc(it.variation_name || '—')}<div class="mute sm">${esc((it.product_name || '').slice(0, 46))}</div></td>
+        <td class="num"><b>${it.qty}</b></td></tr>`).join('')).join('')}</tbody>
+    </table></div>
+  </div>`;
+}
+
+/* ---------- kirim ke database, lalu koreksi ---------- */
+async function kirimBatch() {
+  const shop = ($('toko') || {}).value;
+  if (!shop) return pesan('Pilih toko dulu.');
+  const kirim = HASIL.filter(o => o.order_sn && o.items.length);
+  $('tombolKirim').disabled = true; $('tombolKirim').textContent = 'Mengirim…';
+
+  const { data: b, error: eb } = await sb.from('upload_batches')
+    .insert({ shop_id: shop, file_names: [...new Set(HASIL.map(o => o._file))],
+              created_by: petugas() || 'admin', status: 'draft' })
+    .select().single();
+  if (eb) { $('tombolKirim').disabled = false; $('tombolKirim').textContent = 'Kirim & Periksa'; return pesan('Gagal: ' + eb.message); }
+  BATCH = b.batch_id;
+
+  const sns = kirim.map(o => o.order_sn);
+  const { data: ada } = await sb.from('orders').select('order_sn,status').in('order_sn', sns);
+  const sudah = new Set((ada || []).filter(o => o.status === 'packed').map(o => o.order_sn));
+  const baru = kirim.filter(o => !sudah.has(o.order_sn));
+
+  if (!baru.length) {
+    $('tombolKirim').disabled = false; $('tombolKirim').textContent = 'Kirim & Periksa';
+    return pesan('Semua pesanan di file ini sudah pernah dipindai. Tidak ada yang diubah.');
+  }
+
+  const { error: e1 } = await sb.from('orders').upsert(baru.map(o => ({
+    order_sn: o.order_sn, shop_id: shop, batch_id: BATCH, tracking_no: o.tracking_no,
+    buyer_name: o.buyer_name, ship_by: o.ship_by, service: o.service,
+    page_count: o.pages.length, status: 'pending', source: 'label_pdf', platform: o.platform || 'shopee'
+  })), { onConflict: 'order_sn' });
+  if (e1) return pesan('Gagal: ' + e1.message);
+
+  await sb.from('order_items').delete().in('order_sn', baru.map(o => o.order_sn));
+  const baris = [];
+  for (const o of baru) for (const it of o.items)
+    baris.push({ order_sn: o.order_sn, line_no: it.line_no, sku_label: it.sku || '',
+      variation_name: it.variation_name, product_name: (it.product_name || '').slice(0, 300), qty_label: it.qty });
+  for (let i = 0; i < baris.length; i += 500) {
+    const { error } = await sb.from('order_items').insert(baris.slice(i, i + 500));
+    if (error) return pesan('Gagal kirim baris: ' + error.message);
+  }
+
+  await sb.rpc('resolve_batch', { p_batch: BATCH });
+  if (sudah.size) pesan(sudah.size + ' pesanan dilewati karena sudah dipindai.');
+  await layarKoreksi();
+}
+
+async function layarKoreksi() {
+  const { data } = await sb.from('order_items')
+    .select('id,order_sn,line_no,sku_label,variation_name,product_name,qty_label,qty_fix,variation_id,resolve_method,orders!inner(batch_id,tracking_no,buyer_name)')
+    .eq('orders.batch_id', BATCH).order('order_sn').order('line_no');
+  const baris = data || [];
+  const gagal = baris.filter(r => !r.variation_id);
+
+  $('ringkas').innerHTML = `
+  <div class="panel">
+    <div class="grid g4">
+      <div class="stat"><div class="n">${nf(new Set(baris.map(r => r.order_sn)).size)}</div><div class="l">pesanan</div></div>
+      <div class="stat"><div class="n">${nf(baris.length)}</div><div class="l">baris barang</div></div>
+      <div class="stat"><div class="n" style="color:${gagal.length ? 'var(--bad)' : 'var(--ok)'}">${nf(gagal.length)}</div><div class="l">SKU belum cocok</div></div>
+      <div class="stat"><div class="n" id="nFix">0</div><div class="l">dikoreksi admin</div></div>
+    </div>
+    ${gagal.length ? `<div class="kotak bad" style="margin-top:16px"><h3>${gagal.length} baris belum cocok</h3>
+      <p style="margin:0 0 8px">Baris ini tidak bisa dipotong otomatis. Gudang akan ditolak saat memindai pesanannya.
+      Minta Kepala Admin menambahkan SKU-nya di master produk, lalu unggah ulang file ini.</p></div>` : ''}
+    <div class="row" style="margin-top:16px">
+      <button class="primary" id="konfirmasi" style="font-size:17px;padding:14px 26px">✓ Konfirmasi &amp; Lanjut</button>
+      <span class="mute sm">Setelah dikonfirmasi, Gudang bisa mulai memindai.</span>
+    </div>
+  </div>`;
+
+  $('pratinjau').innerHTML = `
+  <div class="panel">
+    <h2>Koreksi jumlah</h2>
+    <p class="sub">Kalau kamu yakin jumlah yang terbaca salah, isi <b>+FIX</b> dengan selisihnya. Contoh: terbaca 1 padahal 4 → isi <b>3</b>. Boleh minus.</p>
+    <div class="scroll"><table>
+      <thead><tr><th>No. Pesanan</th><th>SKU / Produk</th><th>Variasi</th><th class="num">Terbaca</th><th style="width:120px">+FIX</th><th class="num">Jadi</th><th>Cocok</th></tr></thead>
+      <tbody>${baris.map(r => `<tr data-id="${r.id}">
+        <td class="mono sm">${esc(r.order_sn)}</td>
+        <td>${r.sku_label ? '<b class="mono">' + esc(r.sku_label) + '</b>' : '<span class="tag warn">tanpa SKU</span>'}
+            <div class="mute sm">${esc((r.product_name || '').slice(0, 44))}</div></td>
+        <td class="sm">${esc(r.variation_name || '—')}</td>
+        <td class="num"><b>${r.qty_label}</b></td>
+        <td><input type="number" class="fix" value="${r.qty_fix || 0}" style="min-height:38px;padding:6px 9px;text-align:right"></td>
+        <td class="num jadi"><b>${r.qty_label + (r.qty_fix || 0)}</b></td>
+        <td>${r.variation_id ? `<span class="tag ok">${esc(r.resolve_method)}</span>` : `<span class="tag bad">${esc(r.resolve_method || 'gagal')}</span>`}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+  </div>`;
+
+  $$('#pratinjau .fix').forEach(inp => {
+    inp.oninput = () => {
+      const tr = inp.closest('tr');
+      const dasar = +tr.children[3].textContent;
+      tr.querySelector('.jadi').innerHTML = '<b>' + (dasar + (+inp.value || 0)) + '</b>';
+      tr.style.background = (+inp.value) ? 'var(--warn-soft)' : '';
+      $('nFix').textContent = $$('#pratinjau .fix').filter(i => +i.value).length;
+    };
+  });
+  $('konfirmasi').onclick = konfirmasi;
+}
+
+async function konfirmasi() {
+  const ubah = [];
+  $$('#pratinjau .fix').forEach(inp => {
+    const v = +inp.value || 0;
+    if (v) ubah.push({ id: +inp.closest('tr').dataset.id, qty_fix: v });
+  });
+  $('konfirmasi').disabled = true; $('konfirmasi').textContent = 'Menyimpan…';
+  for (const u of ubah)
+    await sb.from('order_items').update({ qty_fix: u.qty_fix, fixed_by: petugas() || 'admin', fixed_at: new Date().toISOString() }).eq('id', u.id);
+
+  const { data, error } = await sb.rpc('confirm_batch', { p_batch: BATCH, p_operator: petugas() || 'admin' });
+  $('konfirmasi').disabled = false; $('konfirmasi').textContent = '✓ Konfirmasi & Lanjut';
+  if (error || !data.ok) return pesan('Gagal: ' + (error ? error.message : data.code));
+
+  bunyi('ok');
+  const rasio = Math.round((data.rasio_koreksi || 0) * 100);
+  $('ringkas').innerHTML = `<div class="kotak ok"><h3>✅ Terkirim ke Gudang</h3>
+    <p style="margin:0 0 6px"><b>${nf(data.pesanan)}</b> pesanan · <b>${nf(data.baris)}</b> baris ·
+    <b>${nf(data.dikoreksi)}</b> dikoreksi (${rasio}%)</p>
+    ${rasio >= 25 ? '<p style="margin:0;color:var(--bad)"><b>Koreksi di atas 25%.</b> Kepala Admin akan diberi tahu — kemungkinan besar ada SKU yang belum dipasang di Shopee.</p>' : ''}
+    <p class="sm mute" style="margin:10px 0 0">Gudang sudah bisa mulai memindai.</p></div>`;
+  $('pratinjau').innerHTML = '';
+}
+
+/* ---------- retur COD ---------- */
+function isiTokoRetur() {
+  $('rtToko').innerHTML = TOKO.map(t => `<option value="${esc(t.shop_id)}">${esc(t.name)}</option>`).join('');
+}
+function rtBarisBaru() {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td><input class="rtSku" placeholder="SKU atau nama produk"></td>
+    <td><input class="rtVar" placeholder="mis. Hitam"></td>
+    <td><input class="rtQty" type="number" value="1" min="1" style="text-align:right"></td>
+    <td><button class="ghost sm" onclick="this.closest('tr').remove()">✕</button></td>`;
+  $('rtBaris').appendChild(tr);
+}
+$('rtTambahBaris').onclick = rtBarisBaru;
+
+$('rtKirim').onclick = async () => {
+  const order = $('rtOrder').value.trim();
+  if (!order) { $('rtPesan').style.color='var(--bad)'; $('rtPesan').textContent='No. Pesanan wajib diisi.'; return; }
+  const items = [];
+  $$('#rtBaris tr').forEach(tr => {
+    const sku = tr.querySelector('.rtSku').value.trim();
+    const qty = parseInt(tr.querySelector('.rtQty').value, 10) || 1;
+    const va  = tr.querySelector('.rtVar').value.trim() || null;
+    if (sku) items.push({ sku, qty, variasi: va, produk: sku });
+  });
+  if (!items.length) { $('rtPesan').style.color='var(--bad)'; $('rtPesan').textContent='Isi minimal satu SKU.'; return; }
+
+  $('rtKirim').disabled = true;
+  const { data, error } = await sb.rpc('retur_ajukan', {
+    p_shop: $('rtToko').value, p_order_sn: order, p_tracking: $('rtResi').value.trim() || null,
+    p_alasan: $('rtAlasan').value.trim() || null, p_items: items, p_operator: petugas() || 'admin' });
+  $('rtKirim').disabled = false;
+  if (error || !data.ok) { $('rtPesan').style.color='var(--bad)';
+    $('rtPesan').textContent = 'Gagal: ' + (error ? error.message : data.code); return; }
+
+  const belum = data.belum_cocok || [];
+  $('rtPesan').style.color = belum.length ? 'var(--warn)' : 'var(--ok)';
+  $('rtPesan').textContent = belum.length
+    ? `Terkirim, tapi ${belum.length} SKU belum cocok (${belum.map(b=>b.sku).join(', ')}) — Kepala Admin belum bisa menyetujui sebelum itu dibetulkan.`
+    : `✅ Terkirim. Menunggu persetujuan Kepala Admin.`;
+  $('rtOrder').value = $('rtResi').value = $('rtAlasan').value = '';
+  $('rtBaris').innerHTML = ''; rtBarisBaru(); rtMuatRiwayat();
+};
+
+async function rtMuatRiwayat() {
+  const { data } = await sb.from('retur').select('*, retur_items(sku_input,qty,variation_id)')
+    .order('dibuat_pada', { ascending:false }).limit(120);
+  const T = { draft:['warn','menunggu Kepala'], disetujui:['brand','menunggu Gudang'],
+              diterima:['ok','selesai'], ditolak:['bad','ditolak'] };
+  $('rtRiwayat').innerHTML = (data||[]).map(r => {
+    const [w,l] = T[r.status] || ['','' + r.status];
+    return `<tr><td class="sm">${new Date(r.dibuat_pada).toLocaleDateString('id-ID')}</td>
+      <td class="mono sm"><b>${esc(r.order_sn)}</b></td>
+      <td class="sm">${(r.retur_items||[]).map(i=>esc(i.sku_input)+' ×'+i.qty +
+          (i.variation_id?'':' <span class="tag bad">belum cocok</span>')).join('<br>')}</td>
+      <td class="sm mute">${esc(r.alasan||'')}</td>
+      <td><span class="tag ${w}">${esc(l)}</span></td>
+      <td class="sm mute">${esc(r.alasan_tolak || r.catatan || '')}</td></tr>`;
+  }).join('') || '<tr><td colspan="6" class="mute" style="padding:16px">Belum ada pengajuan retur.</td></tr>';
+}
+$('rtMuat').onclick = rtMuatRiwayat;
+
+/* ---------- stok baca saja ---------- */
+let stokRows = [];
+async function muatStok() {
+  $('barisStok').innerHTML = '<tr><td colspan="4" class="mute" style="padding:16px">Memuat…</td></tr>';
+  let all = [], from = 0, hal = 0;
+  while (hal++ < 60) {
+    const { data, error } = await sb.from('v_stock').select('sku,product_name,variation_name,stock_on_hand')
+      .order('sku').range(from, from + 999);
+    if (error) { $('barisStok').innerHTML = '<tr><td colspan="4">' + esc(error.message) + '</td></tr>'; return; }
+    if (!data || !data.length) break;
+    all = all.concat(data); if (data.length < 1000) break; from += 1000;
+  }
+  stokRows = all; gambarStok();
+}
+$('muat').onclick = muatStok;
+$('cari').oninput = gambarStok;
+function gambarStok() {
+  const q = $('cari').value.trim().toLowerCase();
+  const r = stokRows.filter(x => !q || ((x.sku || '') + ' ' + (x.product_name || '') + ' ' + (x.variation_name || '')).toLowerCase().includes(q));
+  $('jml').textContent = nf(r.length) + ' dari ' + nf(stokRows.length) + ' SKU';
+  $('barisStok').innerHTML = r.slice(0, 500).map(x => `<tr>
+    <td class="mono"><b>${esc(x.sku)}</b></td><td class="sm">${esc((x.product_name || '').slice(0, 55))}</td>
+    <td class="sm">${esc(x.variation_name || '—')}</td>
+    <td class="num"><b${x.stock_on_hand <= 0 ? ' style="color:var(--bad)"' : ''}>${nf(x.stock_on_hand)}</b></td></tr>`).join('')
+    || '<tr><td colspan="4" class="mute" style="padding:16px">Tidak ada yang cocok.</td></tr>';
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Unduh Gambar Utama Shopee</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  .wrap{max-width:860px;margin:0 auto;padding:28px 18px 80px}
+  .hero{margin:26px 0 18px}.hero h1{font-size:clamp(25px,5vw,36px)}
+  .hero p{color:var(--mute);max-width:680px;margin:8px 0 0}
+  .drop input{display:none}.drop strong{display:block;color:var(--ink);font-size:17px;margin-bottom:4px}
+  .progress{height:12px;border-radius:99px;overflow:hidden;background:#e9edf3;margin:16px 0 7px}
+  .progress i{display:block;height:100%;width:0;background:var(--brand);transition:width .2s}
+  #hasil{white-space:pre-line}.status{font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">🖼️ Unduh Gambar Shopee</span>
+  <span class="sp"></span>
+  <a class="btn sm" href="kepala.html">Kembali ke Sistem Gudang</a>
+</header>
+
+<main class="wrap">
+  <div class="hero">
+    <h1>Gambar utama produk saja</h1>
+    <p>Masukkan file <code>mass_update_media_info…xlsx</code> dari Shopee. Aplikasi mengambil kolom <b>Foto Sampul</b>, mengabaikan semua gambar produk tambahan dan gambar variasi, lalu membuat satu file ZIP.</p>
+  </div>
+
+  <section class="panel">
+    <label class="drop" id="drop" for="berkas">
+      <strong>Pilih atau tarik file Excel Shopee</strong>
+      <span id="namaBerkas">Belum ada file dipilih</span>
+      <input id="berkas" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+    </label>
+    <div id="ringkas" class="kotak warn hide"></div>
+    <div class="row" style="margin-top:16px">
+      <button class="primary" id="mulai" disabled>Unduh gambar utama (ZIP)</button>
+      <button class="ghost" id="batal" disabled>Batal</button>
+    </div>
+    <div id="kemajuan" class="hide">
+      <div class="progress"><i id="bar"></i></div>
+      <div id="status" class="status mute">Menyiapkan…</div>
+    </div>
+    <div id="hasil" class="kotak hide"></div>
+  </section>
+
+  <p class="mute sm" style="margin:14px 4px">Nama file memakai SKU Induk. Jika SKU kosong atau sama, Kode Produk ditambahkan supaya tidak tertimpa. File Excel dan gambar tidak diunggah ke sistem gudang; prosesnya berlangsung di browser ini.</p>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+let daftar = [], namaExcel = '', dibatalkan = false;
+const bersih = s => String(s || '').trim().replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').slice(0, 120);
+
+function tampilHasil(teks, jenis) {
+  const e = $('hasil'); e.className = 'kotak ' + jenis; e.textContent = teks; e.classList.remove('hide');
+}
+function setKemajuan(done, total, teks) {
+  $('kemajuan').classList.remove('hide');
+  $('bar').style.width = (total ? Math.round(done / total * 100) : 0) + '%';
+  $('status').textContent = teks || `${done} dari ${total} gambar selesai`;
+}
+function ambilBaris(workbook) {
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
+  const headerIndex = rows.findIndex(row => row.some(x => String(x).trim() === 'Foto Sampul'));
+  if (headerIndex < 0) throw new Error('Kolom “Foto Sampul” tidak ditemukan. Pastikan memakai ekspor Media Info dari Shopee.');
+  const header = rows[headerIndex].map(x => String(x).trim());
+  const posisi = nama => header.indexOf(nama);
+  const cover = posisi('Foto Sampul'), sku = posisi('SKU Induk'), productId = posisi('Kode Produk'), nama = posisi('Nama Produk');
+  if (cover < 0) throw new Error('Kolom Foto Sampul tidak ditemukan.');
+  const sudah = new Map();
+  return rows.slice(headerIndex + 1).map(row => {
+    const url = String(row[cover] || '').trim();
+    if (!/^https?:\/\//i.test(url)) return null;
+    const base = bersih(row[sku] || row[productId] || 'produk');
+    const n = (sudah.get(base) || 0) + 1; sudah.set(base, n);
+    const id = n === 1 ? base : `${base}_${bersih(row[productId]) || n}`;
+    return { url, id, judul: String(row[nama] || '').trim(), productId: String(row[productId] || '').trim() };
+  }).filter(Boolean);
+}
+
+$('berkas').onchange = async e => {
+  const file = e.target.files[0]; if (!file) return;
+  try {
+    const data = await file.arrayBuffer();
+    daftar = ambilBaris(XLSX.read(data, { type: 'array' }));
+    if (!daftar.length) throw new Error('Tidak ada tautan gambar utama yang dapat diunduh dalam file ini.');
+    namaExcel = file.name;
+    $('namaBerkas').textContent = file.name;
+    $('ringkas').textContent = `${daftar.length.toLocaleString('id-ID')} gambar utama ditemukan. Gambar variasi tidak akan diambil.`;
+    $('ringkas').classList.remove('hide'); $('mulai').disabled = false; $('hasil').classList.add('hide');
+  } catch (err) {
+    daftar = []; $('mulai').disabled = true; tampilHasil('Tidak bisa membaca file: ' + err.message, 'bad');
+  }
+};
+
+async function ambilGambar(item) {
+  let terakhir;
+  for (let coba = 0; coba < 3; coba++) {
+    try {
+      const res = await fetch(item.url, { mode: 'cors', cache: 'no-store' });
+      if (!res.ok) throw new Error('server membalas ' + res.status);
+      const blob = await res.blob();
+      if (!blob.size) throw new Error('file gambar kosong');
+      const type = (blob.type || '').toLowerCase();
+      const ext = type.includes('png') ? 'png' : type.includes('webp') ? 'webp' : type.includes('gif') ? 'gif' : 'jpg';
+      return { blob, ext };
+    } catch (e) { terakhir = e; if (coba < 2) await new Promise(r => setTimeout(r, 700 * (coba + 1))); }
+  }
+  throw terakhir || new Error('gagal diunduh');
+}
+
+$('batal').onclick = () => { dibatalkan = true; $('batal').disabled = true; };
+$('mulai').onclick = async () => {
+  dibatalkan = false; $('mulai').disabled = true; $('batal').disabled = false; $('hasil').classList.add('hide');
+  const zip = new JSZip(), gagal = []; let selesai = 0, index = 0;
+  setKemajuan(0, daftar.length, 'Mulai mengunduh…');
+  async function pekerja() {
+    while (!dibatalkan) {
+      const i = index++; if (i >= daftar.length) return;
+      const item = daftar[i];
+      try { const gambar = await ambilGambar(item); zip.file(`${item.id}.${gambar.ext}`, gambar.blob); }
+      catch (e) { gagal.push({ item, pesan: e.message || 'gagal diunduh' }); }
+      selesai++; setKemajuan(selesai, daftar.length, `${selesai} dari ${daftar.length} gambar selesai${gagal.length ? ` · ${gagal.length} gagal` : ''}`);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(4, daftar.length) }, pekerja));
+  $('batal').disabled = true;
+  if (!selesai) { tampilHasil('Unduhan dibatalkan sebelum ada gambar yang selesai.', 'warn'); $('mulai').disabled = false; return; }
+  if (gagal.length) zip.file('GAGAL_DIUNDUH.csv', 'Kode Produk,SKU Induk,Alasan\n' + gagal.map(x => [x.item.productId, x.item.id, x.pesan].map(v => '"' + String(v).replaceAll('"', '""') + '"').join(',')).join('\n'));
+  setKemajuan(selesai, daftar.length, 'Membuat file ZIP…');
+  const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = `gambar_utama_shopee_${new Date().toISOString().slice(0,10)}.zip`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 15000);
+  tampilHasil(`Selesai. ${selesai - gagal.length} gambar dimasukkan ke ZIP.${gagal.length ? ` ${gagal.length} gambar gagal; lihat GAGAL_DIUNDUH.csv di dalam ZIP.` : ''}`, gagal.length ? 'warn' : 'ok');
+  $('mulai').disabled = false;
+};
+
+['dragenter','dragover'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.add('over'); }));
+['dragleave','drop'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.remove('over'); }));
+$('drop').addEventListener('drop', e => { const file = e.dataTransfer.files[0]; if (!file) return; const dt = new DataTransfer(); dt.items.add(file); $('berkas').files = dt.files; $('berkas').dispatchEvent(new Event('change')); });
+</script>
+</body>
+</html>

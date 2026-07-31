@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Masuk — Sistem Gudang</title>
+<link rel="stylesheet" href="assets/app.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.111.0/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+</head>
+<body>
+
+<header>
+  <span class="brand">📦 Sistem Gudang</span>
+  <span class="sp"></span>
+  <span id="led" class="led wait"><i></i>memeriksa…</span>
+  <div id="jam"></div>
+</header>
+
+<main>
+  <div class="pinwrap">
+
+    <div id="pilihPeran">
+      <h1 style="font-size:22px;margin-bottom:6px">Pilih Peran</h1>
+      <p class="mute sm" style="margin:0 0 22px">Masuk sesuai tugasmu hari ini.</p>
+      <div class="grid" style="gap:11px">
+        <button class="peran" data-peran="admin"  style="height:66px;font-size:17px">🗂️ Admin Harian</button>
+        <button class="peran" data-peran="gudang" style="height:66px;font-size:17px">📷 Gudang</button>
+        <button class="peran" data-peran="kepala" style="height:66px;font-size:17px">🔑 Kepala Admin</button>
+      </div>
+      <p id="belumDiatur" class="hide kotak bad sm" style="margin-top:20px;text-align:left">
+        <b>Sistem belum diatur.</b><br>Buka <code>config.js</code> dan isi alamat serta kunci Supabase.
+      </p>
+    </div>
+
+    <div id="masukPin" class="hide">
+      <h1 id="judulPeran" style="font-size:22px;margin-bottom:6px"></h1>
+      <p class="mute sm" style="margin:0 0 4px">Masukkan PIN</p>
+      <div class="pindots" id="titik"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <p id="pinPesan" class="sm" style="color:var(--bad);min-height:20px;font-weight:700"></p>
+      <div class="pad">
+        <button class="tombolAngka">1</button><button class="tombolAngka">2</button><button class="tombolAngka">3</button>
+        <button class="tombolAngka">4</button><button class="tombolAngka">5</button><button class="tombolAngka">6</button>
+        <button class="tombolAngka">7</button><button class="tombolAngka">8</button><button class="tombolAngka">9</button>
+        <button class="ghost" id="kembali">← Ganti</button>
+        <button class="tombolAngka">0</button>
+        <button class="ghost" id="hapus">⌫</button>
+      </div>
+      <p class="mute sm" style="margin-top:18px">PIN 4–6 angka. Otomatis masuk setelah lengkap.</p>
+    </div>
+
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script src="assets/core.js"></script>
+<script>
+sb = buatKlien();
+mulaiJam();
+if (!sb) { setLed('off','Belum diatur'); $('belumDiatur').classList.remove('hide'); }
+else { mulaiLed(); }
+
+const NAMA = { admin:'🗂️ Admin Harian', gudang:'📷 Gudang', kepala:'🔑 Kepala Admin' };
+const TUJUAN = { admin:'admin.html', gudang:'gudang.html', kepala:'kepala.html' };
+let peran = null, pin = '';
+
+// Sesi lama tidak memaksa browser kembali ke halaman peran selama pengujian.
+// Jika nanti diperlukan, Kepala Admin dapat mengaktifkannya lewat Supabase.
+(async () => {
+  if (!sb) return;
+  const { data } = await sb.auth.getSession();
+  if (!data.session) return;
+  const r = await ambilPeran();
+  if (r && TUJUAN[r] && await autoArahLoginAktif()) location.replace(TUJUAN[r]);
+})();
+
+$$('.peran').forEach(b => b.onclick = () => {
+  if (!sb) return pesan('Sistem belum diatur.');
+  peran = b.dataset.peran; pin = '';
+  $('judulPeran').textContent = NAMA[peran];
+  $('pilihPeran').classList.add('hide');
+  $('masukPin').classList.remove('hide');
+  gambarTitik();
+});
+
+$('kembali').onclick = () => {
+  $('masukPin').classList.add('hide'); $('pilihPeran').classList.remove('hide');
+  pin = ''; $('pinPesan').textContent = '';
+};
+$('hapus').onclick = () => { pin = pin.slice(0, -1); gambarTitik(); };
+$$('.tombolAngka').forEach(b => b.onclick = () => tambah(b.textContent));
+addEventListener('keydown', e => {
+  if ($('masukPin').classList.contains('hide')) return;
+  if (/^\d$/.test(e.key)) tambah(e.key);
+  else if (e.key === 'Backspace') { pin = pin.slice(0, -1); gambarTitik(); }
+  else if (e.key === 'Enter' && pin.length >= 4) coba();
+});
+
+function tambah(d) {
+  if (pin.length >= 6) return;
+  pin += d; gambarTitik();
+  if (pin.length === 6) coba();
+}
+function gambarTitik() {
+  $$('#titik i').forEach((el, i) => el.classList.toggle('on', i < pin.length));
+  $('pinPesan').textContent = '';
+}
+let sibuk = false;
+async function coba() {
+  if (sibuk || pin.length < 4) return;
+  sibuk = true; $('pinPesan').textContent = 'Memeriksa…'; $('pinPesan').style.color = 'var(--mute)';
+  const r = await masukPIN(peran, pin);
+  sibuk = false;
+  if (r.ok) { location.href = TUJUAN[peran]; return; }
+  $('pinPesan').style.color = 'var(--bad)';
+  $('pinPesan').textContent = r.pesan;
+  bunyi('salah'); pin = ''; $$('#titik i').forEach(el => el.classList.remove('on'));
+}
+
+// PIN 4 atau 5 angka: tekan Enter, atau tunggu 1,2 detik
+let jedaCoba;
+const gambarAsli = gambarTitik;
+gambarTitik = function () {
+  gambarAsli();
+  clearTimeout(jedaCoba);
+  if (pin.length >= 4 && pin.length < 6) jedaCoba = setTimeout(coba, 1200);
+};
+</script>
+</body>
+</html>

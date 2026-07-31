@@ -1,0 +1,54 @@
+﻿name: Jaga Sistem Tetap Hidup
+
+# Supabase gratis menidurkan proyek yang tidak dipakai ±7 hari.
+# GitHub juga MEMATIKAN jadwal Actions setelah 60 hari repo tidak ada commit.
+# Alur ini menyelesaikan keduanya sekaligus: ping Supabase, lalu commit
+# satu file kecil supaya repo tetap dianggap aktif.
+
+on:
+  schedule:
+    - cron: '17 2 */3 * *'      # tiap 3 hari, 02:17 UTC (09:17 WIB)
+  workflow_dispatch:             # bisa juga dijalankan manual dari tab Actions
+
+permissions:
+  contents: write
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ping Supabase
+        env:
+          URL:  ${{ secrets.SUPABASE_URL }}
+          ANON: ${{ secrets.SUPABASE_ANON }}
+        run: |
+          if [ -z "$URL" ] || [ -z "$ANON" ]; then
+            echo "::error::Secret SUPABASE_URL / SUPABASE_ANON belum diisi."
+            echo "Settings → Secrets and variables → Actions → New repository secret"
+            exit 1
+          fi
+          code=$(curl -s -o /tmp/body.txt -w '%{http_code}' \
+            -H "apikey: $ANON" -H "Authorization: Bearer $ANON" \
+            "$URL/rest/v1/shops?select=shop_id&limit=1")
+          echo "HTTP $code"
+          # 200 = jawaban data, 401 = proyek hidup tapi butuh login (tetap sehat)
+          if [ "$code" != "200" ] && [ "$code" != "401" ]; then
+            echo "::error::Supabase tidak menjawab dengan benar (HTTP $code)"
+            cat /tmp/body.txt
+            exit 1
+          fi
+          echo "Supabase hidup."
+
+      - name: Tandai repo tetap aktif
+        run: |
+          mkdir -p .keepalive
+          date -u '+%Y-%m-%dT%H:%M:%SZ  ping ok' >> .keepalive/log.txt
+          tail -n 120 .keepalive/log.txt > .keepalive/log.tmp
+          mv .keepalive/log.tmp .keepalive/log.txt
+          git config user.name  'keepalive-bot'
+          git config user.email 'keepalive-bot@users.noreply.github.com'
+          git add .keepalive/log.txt
+          git commit -m "keepalive: $(date -u '+%Y-%m-%d')" || exit 0
+          git push

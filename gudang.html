@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Gudang — Pemindaian</title>
+<link rel="stylesheet" href="assets/app.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.111.0/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+</head>
+<body>
+
+<header>
+  <span class="brand">📷 Gudang</span>
+  <span id="siapa" class="tag brand"></span>
+  <span class="sp"></span>
+  <span id="led" class="led wait"><i></i>memeriksa…</span>
+  <div id="jam"></div>
+  <button class="ghost sm" onclick="keluar()">Keluar</button>
+</header>
+
+<nav id="tabs">
+  <button data-tab="pindai" class="on">Pindai Label</button>
+  <button data-tab="keluar">Barang Keluar <span id="lencana" class="tag">0</span></button>
+  <button data-tab="masuk">Stok Masuk</button>
+  <button data-tab="retur">Retur Masuk <span id="lencanaRetur" class="tag">0</span></button>
+  <button data-tab="opname">Opname</button>
+</nav>
+
+<main>
+
+<!-- ================= PINDAI ================= -->
+<section id="tab-pindai">
+  <div class="panel">
+    <div class="row">
+      <div style="flex:1;min-width:240px">
+        <label>Tembak barcode di label yang sudah dicetak</label>
+        <input id="pindai" placeholder="menunggu scanner…" autocomplete="off" spellcheck="false">
+      </div>
+      <div style="width:170px"><label>Nama petugas</label><input id="namaPetugas" placeholder="nama"></div>
+    </div>
+    <p class="mute sm" style="margin:10px 0 0">Barcode garis (No. Pesanan) atau QR (No. Resi) — dua-duanya bisa.</p>
+  </div>
+
+  <div id="hasil"></div>
+
+  <div class="panel">
+    <div class="row" style="margin-bottom:14px">
+      <h2 style="flex:1">Pesanan menunggu dipindai</h2>
+      <input id="cariPesanan" placeholder="Cari no. pesanan…" style="width:220px">
+      <button id="muatPesanan">Muat ulang</button>
+    </div>
+    <div id="kotakPesanan" class="boxes"></div>
+    <p id="kosongPesanan" class="mute center hide" style="padding:30px">Belum ada pesanan dari Admin Harian.</p>
+  </div>
+</section>
+
+<!-- ================= BARANG KELUAR ================= -->
+<section id="tab-keluar" class="hide">
+  <div class="panel">
+    <div class="row" style="margin-bottom:6px">
+      <h2 style="flex:1">Barang yang harus diambil</h2>
+      <button id="selesai">✓ Selesai &amp; Bersihkan</button>
+    </div>
+    <p class="sub">Gabungan semua pesanan yang sudah dipindai di perangkat ini. Ketuk kotak untuk melihat pesanan mana saja.</p>
+    <div id="kotakSku" class="boxes"></div>
+    <p id="kosongSku" class="mute center" style="padding:30px">Belum ada yang dipindai.</p>
+  </div>
+</section>
+
+<!-- ================= STOK MASUK ================= -->
+<section id="tab-masuk" class="hide">
+  <div class="panel">
+    <h2>Barang datang</h2>
+    <p class="sub">Daftar hanya menampilkan SKU Utama. Stok masuk dan koreksi nama disimpan sebagai pengajuan di Supabase; stok aktual baru berubah setelah Kepala Admin menyetujuinya.</p>
+    <div class="row">
+      <div style="flex:1;min-width:240px"><input id="cariMasuk" placeholder="Ketik SKU Induk, tipe, atau nama produk…"></div>
+      <button id="muatMasuk">Muat ulang daftar</button>
+    </div>
+    <p id="jmlMasuk" class="mute sm" style="margin-top:10px"></p>
+    <div class="scroll" style="margin-top:6px"><table>
+      <thead><tr><th>SKU Utama</th><th>Produk</th><th class="num">Tipe SKU</th><th class="num">Total stok</th><th style="width:130px">Aksi</th></tr></thead>
+      <tbody id="barisMasuk"></tbody>
+    </table></div>
+  </div>
+</section>
+
+<!-- ================= RETUR MASUK ================= -->
+<section id="tab-retur" class="hide">
+  <div class="panel">
+    <div class="row" style="margin-bottom:6px">
+      <h2 style="flex:1">Barang retur menunggu diterima</h2>
+      <button id="muatRetur">Muat ulang</button>
+    </div>
+    <p class="sub">Hanya retur yang <b>sudah disetujui Kepala Admin</b> yang muncul di sini.
+       Stok baru bertambah setelah kamu menekan “Barang sudah diterima”.</p>
+    <div id="daftarRetur"></div>
+    <p id="kosongRetur" class="mute center" style="padding:30px">Tidak ada retur yang menunggu.</p>
+  </div>
+</section>
+
+<!-- ================= OPNAME ================= -->
+<section id="tab-opname" class="hide">
+  <div class="panel" id="opnameMulai">
+    <h2>Sesi opname</h2>
+    <p class="sub">Hitung barang di rak, ketik jumlah aslinya. Tidak perlu stiker atau scan —
+       cukup cocokkan angka. Selisihnya nanti disetujui Kepala Admin sebelum stok berubah.</p>
+    <div class="row">
+      <div style="flex:1;min-width:220px"><label>Judul sesi</label><input id="opJudul" placeholder="mis. Opname rak A — Agustus"></div>
+      <div style="align-self:end"><button class="primary" id="opBuat">Mulai sesi baru</button></div>
+    </div>
+    <div id="opLama" style="margin-top:18px"></div>
+  </div>
+
+  <div class="panel hide" id="opnameKerja">
+    <div class="row" style="margin-bottom:10px">
+      <h2 style="flex:1" id="opTajuk"></h2>
+      <span id="opRingkas" class="tag"></span>
+      <button class="primary" id="opAjukan">Ajukan ke Kepala Admin</button>
+      <button class="ghost" id="opTutup">Tutup</button>
+    </div>
+    <div class="row">
+      <div style="flex:1;min-width:240px"><input id="opCari" placeholder="Cari SKU atau nama produk…"></div>
+      <label style="display:flex;align-items:center;gap:7px;text-transform:none;font-size:14px;font-weight:500;margin:0">
+        <input type="checkbox" id="opBelum" style="width:auto;min-height:auto"> hanya yang belum dihitung</label>
+    </div>
+    <p class="note mute sm" style="margin:10px 0 0">Isi kolom “Hitungan” lalu tekan Enter atau pindah kolom. Kosongkan kalau SKU itu tidak ikut dihitung.</p>
+    <div class="scroll" style="margin-top:10px"><table>
+      <thead><tr><th>SKU</th><th>Produk</th><th>Variasi</th><th class="num">Sistem</th><th style="width:130px">Hitungan</th><th class="num">Selisih</th></tr></thead>
+      <tbody id="opBaris"></tbody></table></div>
+  </div>
+</section>
+
+</main>
+
+<dialog id="dlg"><div class="dlg" id="dlgIsi"></div></dialog>
+<div id="antrean" class="antrean hide"></div>
+<div id="toast"></div>
+
+<script src="assets/core.js"></script>
+<script>
+let PESANAN = [], SESI = simpan.getJSON('gudang.sesi', {});   // sku -> {qty, fix, produk, variasi, gambar, pesanan:[...]}
+
+(async () => {
+  if (!await jagaHalaman('gudang')) return;
+  pasangTab(['pindai','keluar','masuk','retur','opname'], 'pindai');
+  tampilAntrean(); kirimAntrean();
+  await muatPesanan();
+  gambarSku();
+  muatRetur();
+  fokus();
+})();
+window.onTab = t => {
+  if (t === 'pindai') fokus();
+  if (t === 'masuk'  && !stokRows.length) muatStok();
+  if (t === 'retur')  muatRetur();
+  if (t === 'opname') { if (!stokRows.length) muatStok(); muatSesiLama(); }
+};
+
+/* ---------- kotak pindai selalu fokus ---------- */
+function fokus() { const b = $('pindai'); if (b && !$('tab-pindai').classList.contains('hide')) b.focus(); }
+document.addEventListener('click', e => { if (!e.target.closest('input,select,button,a,dialog')) fokus(); });
+setInterval(fokus, 1500);
+
+$('pindai').addEventListener('keydown', async e => {
+  if (e.key !== 'Enter') return;
+  const kode = $('pindai').value.trim(); $('pindai').value = '';
+  if (!kode) return;
+  $('pindai').disabled = true;
+  try {
+    const { data, error } = await rpcAman('scan_out',
+      { p_scan: kode, p_operator: petugas(), p_client_id: idKlien(), p_device: idPerangkat() }, true);
+    if (error) tampilHasil({ ok: false, code: 'gangguan', message: error.message }, kode);
+    else tampilHasil(data, kode);
+  } finally { $('pindai').disabled = false; fokus(); }
+});
+
+const PESAN_SALAH = {
+  pesanan_tidak_ada : ['❌ Pesanan tidak ada', 'Label ini belum diunggah Admin Harian. Minta admin unggah dulu file PDF-nya.'],
+  sudah_dipindai    : ['🔁 Sudah pernah dipindai', 'Stok TIDAK dipotong dua kali. Ini pengaman bekerja dengan benar.'],
+  dibatalkan        : ['🚫 Pesanan dibatalkan', 'Stok tidak dipotong.'],
+  sku_belum_cocok   : ['❓ SKU belum cocok', 'Tidak ada stok yang dipotong sama sekali — bukan sebagian. Laporkan ke Admin.'],
+  batch_belum_dikonfirmasi : ['⏳ Belum dikonfirmasi Admin', 'Admin Harian belum menekan tombol Konfirmasi untuk kiriman ini.'],
+  tidak_berwenang   : ['🔒 Tidak berwenang', 'Akun ini tidak boleh memindai.'],
+  kosong            : ['❌ Kosong', ''],
+  perangkat_belum_disetujui : ['🔒 Perangkat belum terdaftar', 'Kepala Admin harus menyetujui perangkat ini dulu di menu Pengaturan.'],
+  gangguan          : ['⚠️ Gangguan jaringan', 'Pemindaian disimpan dan akan dikirim otomatis saat internet kembali.']
+};
+
+function tampilHasil(r, kode) {
+  const box = $('hasil');
+
+  if (r && r.antre) {
+    box.innerHTML = `<div class="kotak warn"><h3>📥 Disimpan (luring)</h3>
+      <p style="margin:0" class="mono"><b>${esc(kode)}</b></p>
+      <p style="margin:8px 0 0">Internet sedang mati. Pemindaian masuk antrean dan akan dikirim otomatis begitu tersambung. Silakan lanjut packing.</p></div>`;
+    bunyi('ulang'); return;
+  }
+  if (r && r.duplikat_sinkron) {
+    box.innerHTML = `<div class="kotak warn"><h3>🔁 Sudah tersinkron</h3><p style="margin:0">Pemindaian ini sudah masuk sebelumnya. Stok tidak dipotong lagi.</p></div>`;
+    bunyi('ulang'); return;
+  }
+
+  if (r && r.ok) {
+    const minus = r.baris.some(b => b.minus);
+    const total = r.baris.reduce((a, b) => a + (+b.qty), 0);
+    box.innerHTML = `<div class="kotak ${minus ? 'warn' : 'ok'}">
+      <h3>${minus ? '⚠️ Dipotong — stok jadi minus' : '✅ Stok dipotong'}</h3>
+      <div class="row" style="gap:26px;margin-bottom:12px">
+        <div><div class="mute sm">No. Pesanan</div><div class="mono"><b>${esc(r.order_sn)}</b></div></div>
+        <div><div class="mute sm">No. Resi</div><div class="mono">${esc(r.tracking_no || '—')}</div></div>
+        <div><div class="mute sm">Penerima</div><div>${esc(r.buyer_name || '—')}</div></div>
+        <div><div class="mute sm">Total unit</div><div><b>${total}</b></div></div>
+      </div>
+      <div class="boxes">${r.baris.map(b => `
+        <div class="box ${(+b.qty_fix) ? 'fix' : ''}">
+          <span class="qty">x${b.qty}</span>${thumb(b.gambar)}
+          <div class="body"><div class="t1">${esc(b.sku)}</div>
+          <div class="t2">${esc(b.variasi || '—')}</div>
+          <div class="t2">Sisa: <b style="color:${b.minus ? 'var(--bad)' : 'inherit'}">${nf(b.sisa)}</b></div>
+          ${(+b.qty_fix) ? `<div class="t2" style="color:var(--bad);font-weight:800">+FIX ${b.qty_fix}</div>` : ''}</div>
+        </div>`).join('')}</div>
+      <div class="row" style="margin-top:14px">
+        <button class="primary" onclick="tambahBarang('${esc(r.order_sn)}')">➕ Tambah barang ke pesanan ini</button>
+        <button class="ghost sm" onclick="batalkan('${esc(r.order_sn)}')">Batalkan pemindaian</button>
+      </div></div>`;
+    bunyi(minus ? 'ulang' : 'ok');
+    catatSesi(r);
+    tandaiKotak(r.order_sn);
+    return;
+  }
+
+  const [judul, bantu] = PESAN_SALAH[r.code] || ['❌ ' + (r.code || 'gagal'), r.message || ''];
+  box.innerHTML = `<div class="kotak bad"><h3>${esc(judul)}</h3>
+    <p class="mono" style="margin:0 0 8px">${esc(kode)}</p>
+    ${bantu ? `<p style="margin:0 0 10px">${esc(bantu)}</p>` : ''}
+    ${r.code === 'sudah_dipindai' ? `<p class="sm mute" style="margin:0 0 10px">Dipindai ${esc(new Date(r.packed_at).toLocaleString('id-ID'))} oleh ${esc(r.packed_by || '—')}.</p>
+      <button class="danger" onclick="batalkan('${esc(r.order_sn)}')">Batalkan pemindaian sebelumnya</button>` : ''}
+    ${r.boleh_paksa ? `<div class="kotak" style="background:#fff;border-color:var(--line);margin:12px 0 4px">
+      <b>Barangnya tetap harus dikirim?</b>
+      <p class="sm" style="margin:6px 0 10px">Tekan <b>Lanjut Kirim</b>. Barang yang SUDAH dikenali tetap dipotong stoknya,
+      yang belum dikenali dicatat sebagai utang data dan langsung dilaporkan ke Kepala Admin.</p>
+      <button class="primary" onclick="lanjutKirim('${esc(r.order_sn)}')">🚚 Lanjut Kirim</button>
+    </div>` : ''}
+    ${r.belum ? `<table style="margin-top:8px"><thead><tr><th>SKU di label</th><th>Variasi</th><th class="num">Qty</th><th>Sebab</th></tr></thead><tbody>
+      ${r.belum.map(u => `<tr><td class="mono"><b>${esc(u.sku || '‹kosong›')}</b><div class="mute sm">${esc((u.produk || '').slice(0, 40))}</div></td>
+      <td class="sm">${esc(u.variasi || '—')}</td><td class="num">${u.qty}</td><td class="sm">${esc(u.sebab)}</td></tr>`).join('')}
+    </tbody></table>` : ''}</div>`;
+  bunyi(r.code === 'sudah_dipindai' ? 'ulang' : 'salah');
+}
+
+async function batalkan(sn) {
+  if (!confirm('Kembalikan stok untuk pesanan ' + sn + '?')) return;
+  const { data, error } = await rpcAman('undo_scan', { p_order_sn: sn, p_operator: petugas() }, false);
+  if (error || !data.ok) return pesan('Gagal: ' + (error ? error.message : data.code));
+  pesan('Stok dikembalikan (' + data.baris + ' baris).');
+  buangSesi(sn); await muatPesanan();
+  $('hasil').innerHTML = `<div class="kotak warn"><h3>↩️ Dibatalkan</h3><p style="margin:0">Stok untuk <b class="mono">${esc(sn)}</b> sudah dikembalikan.</p></div>`;
+  fokus();
+}
+
+/* ---------- kotak pesanan ---------- */
+async function muatPesanan() {
+  const { data, error } = await sb.from('orders')
+    .select('order_sn,tracking_no,buyer_name,status,order_items(sku_label,product_name,variation_name,qty_final,variations(image_url,sku,products(image_url,product_name)))')
+    .eq('status', 'pending').order('imported_at', { ascending: false }).limit(400);
+  if (error) { simpan.getJSON('gudang.pesananCache', []); }
+  PESANAN = data || simpan.getJSON('gudang.pesananCache', []);
+  if (data) simpan.setJSON('gudang.pesananCache', data);
+  gambarPesanan();
+}
+$('muatPesanan').onclick = muatPesanan;
+$('cariPesanan').oninput = gambarPesanan;
+
+function gambarPesanan() {
+  const q = $('cariPesanan').value.trim().toLowerCase();
+  const list = PESANAN.filter(o => !q || (o.order_sn + ' ' + (o.tracking_no || '')).toLowerCase().includes(q));
+  $('kosongPesanan').classList.toggle('hide', list.length > 0);
+  $('kotakPesanan').innerHTML = list.map(o => {
+    const t = (o.order_items || [])[0] || {};
+    const v = t.variations || {};
+    const img = v.image_url || (v.products || {}).image_url;
+    const n = (o.order_items || []).length;
+    return `<div class="box" id="ord-${esc(o.order_sn)}" onclick="lihatPesanan('${esc(o.order_sn)}')">
+      ${n > 1 ? `<span class="qty">${n} item</span>` : ''}${thumb(img)}
+      <div class="body">
+        <div class="t1 mono">${esc(o.order_sn)}</div>
+        <div class="t2 mono">${esc(o.tracking_no || '')}</div>
+        <div class="t2">${esc((t.product_name || '').slice(0, 34))}</div>
+      </div></div>`;
+  }).join('');
+}
+function tandaiKotak(sn) {
+  const el = $('ord-' + sn);
+  if (el) { el.classList.add('done'); setTimeout(() => { el.remove(); PESANAN = PESANAN.filter(o => o.order_sn !== sn); }, 1400); }
+}
+function lihatPesanan(sn) {
+  const o = PESANAN.find(x => x.order_sn === sn); if (!o) return;
+  $('dlgIsi').innerHTML = `<h2 class="mono">${esc(o.order_sn)}</h2>
+    <p class="mute sm mono" style="margin:2px 0 14px">${esc(o.tracking_no || '')} · ${esc(o.buyer_name || '')}</p>
+    <table><thead><tr><th>SKU</th><th>Variasi</th><th class="num">Qty</th></tr></thead><tbody>
+    ${(o.order_items || []).map(i => `<tr><td class="mono">${esc((i.variations || {}).sku || i.sku_label || '—')}
+      <div class="mute sm">${esc((i.product_name || '').slice(0, 38))}</div></td>
+      <td class="sm">${esc(i.variation_name || '—')}</td><td class="num"><b>${i.qty_final}</b></td></tr>`).join('')}
+    </tbody></table>
+    <div class="row" style="margin-top:16px"><button class="primary" onclick="dlg.close()">Tutup</button></div>`;
+  dlg.showModal();
+}
+
+/* ---------- barang keluar ---------- */
+function catatSesi(r) {
+  for (const b of r.baris) {
+    const k = b.sku;
+    SESI[k] = SESI[k] || { qty: 0, fix: 0, variasi: b.variasi, gambar: b.gambar, pesanan: [] };
+    SESI[k].qty += (+b.qty); SESI[k].fix += (+b.qty_fix || 0);
+    SESI[k].pesanan.push({ sn: r.order_sn, resi: r.tracking_no, qty: +b.qty, fix: +b.qty_fix || 0 });
+  }
+  simpan.setJSON('gudang.sesi', SESI); gambarSku();
+}
+function buangSesi(sn) {
+  for (const k in SESI) {
+    const sisa = SESI[k].pesanan.filter(p => p.sn !== sn);
+    if (!sisa.length) delete SESI[k];
+    else { SESI[k].pesanan = sisa; SESI[k].qty = sisa.reduce((a, p) => a + p.qty, 0); SESI[k].fix = sisa.reduce((a, p) => a + p.fix, 0); }
+  }
+  simpan.setJSON('gudang.sesi', SESI); gambarSku();
+}
+function gambarSku() {
+  const ks = Object.keys(SESI).sort();
+  $('lencana').textContent = ks.length;
+  $('kosongSku').classList.toggle('hide', ks.length > 0);
+  $('kotakSku').innerHTML = ks.map(k => {
+    const s = SESI[k];
+    return `<div class="box ${s.fix ? 'fix' : ''}" onclick="rincianSku('${esc(k)}')">
+      <span class="qty">x${s.qty}</span>${thumb(s.gambar)}
+      <div class="body"><div class="t1">${esc(k)}</div>
+      <div class="t2">${esc(s.variasi || '—')}</div>
+      ${s.fix ? `<div class="t2" style="color:var(--bad);font-weight:800">termasuk +FIX ${s.fix}</div>` : ''}
+      <div class="t2 mute">${s.pesanan.length} pesanan</div></div></div>`;
+  }).join('');
+}
+function rincianSku(k) {
+  const s = SESI[k];
+  $('dlgIsi').innerHTML = `<h2>${esc(k)}</h2>
+    <p class="mute sm" style="margin:2px 0 14px">${esc(s.variasi || '—')} · total <b>${s.qty}</b> unit</p>
+    <table><thead><tr><th>No. Pesanan</th><th>No. Resi</th><th class="num">Ambil</th></tr></thead><tbody>
+    ${s.pesanan.map(p => `<tr><td class="mono">${esc(p.sn)}</td><td class="mono sm">${esc(p.resi || '')}</td>
+      <td class="num"><b>x${p.qty}</b>${p.fix ? ` <span style="color:var(--bad);font-weight:800">(+FIX ${p.fix})</span>` : ''}</td></tr>`).join('')}
+    </tbody></table>
+    <div class="row" style="margin-top:16px"><button class="primary" onclick="dlg.close()">Tutup</button></div>`;
+  dlg.showModal();
+}
+$('selesai').onclick = () => {
+  if (!Object.keys(SESI).length) return;
+  if (!confirm('Bersihkan daftar barang keluar di layar ini?\n\nStok yang sudah dipotong TIDAK berubah — ini hanya membersihkan tampilan.')) return;
+  SESI = {}; simpan.setJSON('gudang.sesi', SESI); gambarSku(); pesan('Layar dibersihkan.');
+};
+
+/* ---------- stok masuk per SKU Induk ---------- */
+let stokRows = [], stokPengajuan = [], pesanStokInduk = {};
+
+function idIndukGudang(r) {
+  return String(r.shop_id || '') + '::' + String(r.parent_sku || r.sku || '');
+}
+function pendingTipeGudang(vid) {
+  return stokPengajuan.filter(p => p.variation_id === vid && p.status === 'menunggu')
+    .reduce((n, p) => n + Number(p.qty || 0), 0);
+}
+function pendingIndukGudang(g) {
+  return g.variasi.reduce((n, r) => n + pendingTipeGudang(r.variation_id), 0);
+}
+
+async function muatStok() {
+  $('barisMasuk').innerHTML = '<tr><td colspan="5" class="mute" style="padding:16px">Memuat…</td></tr>';
+  let all = [], from = 0, hal = 0;
+  while (hal++ < 60) {
+    const { data, error } = await sb.from('v_stock')
+      .select('variation_id,shop_id,sku,parent_sku,product_name,variation_name,image_url,stock_on_hand,reorder_point,perlu_restock')
+      .order('sku').range(from, from + 999);
+    if (error) { $('barisMasuk').innerHTML = '<tr><td colspan="5">' + esc(error.message) + '</td></tr>'; return; }
+    if (!data || !data.length) break;
+    all = all.concat(data); if (data.length < 1000) break; from += 1000;
+  }
+  const { data: pengajuan, error: ePengajuan } = await sb.from('pengajuan_stok_masuk')
+    .select('pengajuan_id,variation_id,qty,status,diajukan_pada').eq('status', 'menunggu').limit(2000);
+  if (ePengajuan) return pesan('Gagal memuat pengajuan stok: ' + ePengajuan.message);
+  stokRows = all;
+  stokPengajuan = pengajuan || [];
+  simpan.setJSON('gudang.stokCache', all.slice(0, 2000));
+  gambarMasuk();
+}
+$('muatMasuk').onclick = muatStok;
+$('cariMasuk').oninput = gambarMasuk;
+
+function gambarMasuk() {
+  const q = $('cariMasuk').value.trim().toLowerCase();
+  const semua = kelompokStokInduk(stokRows);
+  const rows = semua.filter(g => {
+    const isi = [g.sku_induk, g.product_name]
+      .concat(g.variasi.map(v => `${v.sku || ''} ${v.variation_name || ''}`))
+      .join(' ').toLowerCase();
+    return !q || isi.includes(q);
+  });
+  $('jmlMasuk').textContent = nf(rows.length) + ' dari ' + nf(semua.length) +
+    ' SKU Utama · ' + nf(stokPengajuan.length) + ' pengajuan stok menunggu';
+  $('barisMasuk').innerHTML = rows.slice(0,300).map(g => {
+    const p = pendingIndukGudang(g);
+    return `<tr><td class="mono"><b>${esc(g.sku_induk)}</b></td>
+      <td class="sm">${esc((g.product_name || '').slice(0,52))}</td>
+      <td class="num">${nf(g.jumlah_tipe)}</td>
+      <td class="num"><b>${nf(g.stock_on_hand)}</b>${p ? `<div><span class="tag warn">+${nf(p)} menunggu</span></div>` : ''}</td>
+      <td><button class="sm primary" onclick="bukaStokIndukGudang('${esc(g.id)}')">Buka…</button></td></tr>`;
+  }).join('') || '<tr><td colspan="5" class="mute" style="padding:16px">Tidak ada yang cocok.</td></tr>';
+}
+
+function bukaStokIndukGudang(id) {
+  const g = kelompokStokInduk(stokRows).find(x => x.id === id); if (!g) return;
+  const p = pendingIndukGudang(g), info = pesanStokInduk[id] || '';
+  $('dlgIsi').innerHTML = `<h2 class="mono">${esc(g.sku_induk)}</h2>
+    <div class="row" style="align-items:flex-start;margin:4px 0 14px">${thumb(g.image_url, g.sku_induk)}
+      <div><p class="mute sm" style="margin:0">${esc(g.product_name || '')}</p>
+      <p class="sm" style="margin:5px 0 0"><b>${nf(g.jumlah_tipe)}</b> tipe SKU · stok aktual <b>${nf(g.stock_on_hand)}</b>${p ? ` · <b style="color:var(--brand)">+${nf(p)} menunggu</b>` : ''}</p></div></div>
+    ${info ? `<div class="kotak ok sm" style="margin-bottom:12px">${esc(info)}</div>` : ''}
+    <p class="sub">Pilih <b>Edit</b> pada tipe SKU. Setiap penambahan dan koreksi nama masuk ke Supabase sebagai pengajuan; angka stok aktual di layar ini belum berubah.</p>
+    <div class="scroll"><table><thead><tr><th>SKU variasi</th><th>Tipe SKU</th><th class="num">Stok aktual</th><th>Aksi</th></tr></thead><tbody>
+      ${[...g.variasi].sort((a,b)=>(a.sku||'').localeCompare(b.sku||'')).map(r => {
+        const n = pendingTipeGudang(r.variation_id);
+        return `<tr><td class="mono sm"><b>${esc(r.sku)}</b></td><td class="sm">${esc(r.variation_name || '—')}</td>
+          <td class="num"><b>${nf(r.stock_on_hand)}</b>${n ? ` <span class="tag warn">+${nf(n)} menunggu</span>` : ''}</td>
+          <td><button class="sm primary" onclick="editTipeGudang('${esc(r.variation_id)}')">Edit…</button></td></tr>`;
+      }).join('')}
+    </tbody></table></div><div class="row" style="margin-top:16px"><button class="primary" onclick="dlg.close()">Selesai</button></div>`;
+  if (!dlg.open) dlg.showModal();
+}
+
+function editTipeGudang(vid) {
+  const r = stokRows.find(x => x.variation_id === vid); if (!r) return;
+  const kembali = idIndukGudang(r), pending = pendingTipeGudang(vid);
+  $('dlgIsi').innerHTML = `<h2>Edit tipe SKU</h2><p class="mono"><b>${esc(r.sku)}</b></p>
+    <p class="mute sm">${esc(r.product_name || '')} · ${esc(r.variation_name || '—')} · stok aktual <b>${nf(r.stock_on_hand)}</b>${pending ? ` · <b style="color:var(--brand)">+${nf(pending)} menunggu</b>` : ''}</p>
+    <div class="kotak warn" style="margin-top:14px"><h3 style="margin-bottom:10px">Ajukan stok masuk</h3>
+      <div class="grid g2"><div><label>Jumlah masuk</label><input id="gmQty" type="number" min="1" inputmode="numeric" autofocus></div>
+      <div><label>Catatan (opsional)</label><input id="gmCatatan" placeholder="mis. barang supplier datang"></div></div>
+      <button class="primary" id="gmSimpan" style="margin-top:12px" onclick="ajukanTambahTipeGudang('${esc(vid)}')">Ajukan ke Kepala Admin</button>
+    </div>
+    <div class="kotak" style="margin-top:14px"><h3 style="margin-bottom:10px">Usulkan perubahan nama/kode</h3>
+      <p class="mute sm">Master tidak berubah sebelum Kepala Admin menyetujui.</p>
+      <div class="grid g2"><div><label>Nama produk</label><input id="guProduk" value="${esc(r.product_name || '')}"></div>
+        <div><label>Nama tipe SKU</label><input id="guVariasi" value="${esc(r.variation_name || '')}"></div>
+        <div><label>SKU variasi</label><input id="guSku" value="${esc(r.sku || '')}"></div></div>
+      <button id="guSimpan" style="margin-top:12px" onclick="simpanUsulNamaGudang('${esc(vid)}')">Ajukan perubahan nama</button>
+    </div>
+    <div class="row" style="margin-top:16px"><button onclick="bukaStokIndukGudang('${esc(kembali)}')">Kembali</button></div>`;
+}
+
+async function ajukanTambahTipeGudang(vid) {
+  const r = stokRows.find(x => x.variation_id === vid); if (!r) return;
+  const qty = parseInt($('gmQty').value, 10);
+  if (!(qty > 0)) return pesan('Isi jumlah masuk lebih dari 0.');
+  const tombol = $('gmSimpan'); tombol.disabled = true;
+  const { data, error } = await rpcAman('ajukan_stok_masuk', {
+    p_variation_id:vid, p_qty:qty, p_note:$('gmCatatan').value.trim() || null,
+    p_operator:petugas() || 'gudang', p_client_id:idKlien(), p_device:idPerangkat()
+  }, true);
+  tombol.disabled = false;
+  if (error) return pesan('Gagal: ' + error.message);
+  const kembali = idIndukGudang(r);
+  if (data.antre) {
+    pesanStokInduk[kembali] = r.sku + ' +' + qty + ' tersimpan di perangkat dan menunggu dikirim ke Supabase.';
+    bukaStokIndukGudang(kembali);
+    return pesan('Menunggu koneksi sebelum pengajuan masuk ke Supabase.');
+  }
+  if (!data.ok) return pesan('Gagal: ' + data.code);
+  if (!stokPengajuan.some(p => p.pengajuan_id === data.pengajuan_id))
+    stokPengajuan.push({ pengajuan_id:data.pengajuan_id, variation_id:vid, qty, status:'menunggu', diajukan_pada:new Date().toISOString() });
+  pesanStokInduk[kembali] = r.sku + ' +' + qty + ' sudah tersimpan di Supabase dan menunggu persetujuan Kepala Admin.';
+  gambarMasuk(); bukaStokIndukGudang(kembali); bunyi('ok');
+  pesan('Pengajuan stok tersimpan. Stok aktual belum berubah.');
+}
+
+async function simpanUsulNamaGudang(vid) {
+  const r = stokRows.find(x => x.variation_id === vid); if (!r) return;
+  const tombol = $('guSimpan'); tombol.disabled = true;
+  const { data, error } = await sb.rpc('ajukan_ubah_master_sku', {
+    p_variation_id:vid, p_sku:$('guSku').value.trim(), p_product_name:$('guProduk').value.trim(),
+    p_variation_name:$('guVariasi').value.trim() || null, p_operator:petugas() || 'gudang'
+  });
+  tombol.disabled = false;
+  if (error || !data.ok) return pesan('Gagal: ' + (error ? error.message : data.code));
+  const kembali = idIndukGudang(r);
+  pesanStokInduk[kembali] = 'Usulan perubahan ' + r.sku + ' sudah tersimpan di Supabase dan menunggu Kepala Admin.';
+  bukaStokIndukGudang(kembali); bunyi('ok');
+  pesan('Usulan perubahan SKU tersimpan di Supabase.');
+}
+
+/* ---------- lanjut kirim ---------- */
+async function lanjutKirim(sn) {
+  const alasan = prompt('Kenapa pesanan ' + sn + ' tetap dikirim tanpa pemindaian penuh?\n\nAlasan ini dilaporkan ke Kepala Admin.', 'barang sudah terlanjur dikemas');
+  if (alasan === null) return;
+  const { data, error } = await rpcAman('kirim_paksa',
+    { p_scan: sn, p_operator: petugas(), p_alasan: alasan, p_client_id: idKlien(), p_device: idPerangkat() }, false);
+  if (error) return pesan('Gagal: ' + error.message);
+  if (!data.ok) return pesan('Gagal: ' + data.code);
+  bunyi('ulang');
+  $('hasil').innerHTML = `<div class="kotak warn"><h3>🚚 Dikirim paksa</h3>
+    <p style="margin:0 0 10px"><b class="mono">${esc(sn)}</b> ditandai selesai. Kepala Admin sudah diberi tahu.</p>
+    ${data.baris.length ? `<p class="sm" style="margin:0 0 6px"><b>Stok dipotong:</b></p><div class="boxes">${
+      data.baris.map(b=>`<div class="box"><span class="qty">x${b.qty}</span><div class="thumb">📦</div>
+      <div class="body"><div class="t1">${esc(b.sku)}</div><div class="t2">Sisa: <b style="color:${b.minus?'var(--bad)':'inherit'}">${nf(b.sisa)}</b></div></div></div>`).join('')}</div>`:''}
+    ${data.belum.length ? `<p class="sm" style="margin:12px 0 6px;color:var(--bad)"><b>Belum bisa dipotong (${data.belum.length}):</b></p>
+      <table><thead><tr><th>Produk</th><th>Variasi</th><th class="num">Qty</th></tr></thead><tbody>
+      ${data.belum.map(u=>`<tr><td class="sm">${esc((u.produk||'').slice(0,44))}</td><td class="sm">${esc(u.variasi||'—')}</td><td class="num">${u.qty}</td></tr>`).join('')}
+      </tbody></table>`:''}
+    <div class="row" style="margin-top:14px"><button class="primary" onclick="tambahBarang('${esc(sn)}')">➕ Tambah barang ke pesanan ini</button></div>
+  </div>`;
+  muatPesanan(); fokus();
+}
+
+/* ---------- gudang menambah barang ---------- */
+async function tambahBarang(sn) {
+  if (!stokRows.length) await muatStok();
+  $('dlgIsi').innerHTML = `<h2>Tambah barang</h2>
+    <p class="mute sm mono" style="margin:2px 0 14px">Pesanan ${esc(sn)}</p>
+    <div><label>Cari SKU</label><input id="tbCari" placeholder="ketik SKU atau nama produk…" autofocus></div>
+    <div id="tbHasil" class="scroll" style="max-height:280px;margin-top:10px"></div>
+    <p class="sm mute" style="margin:12px 0 0">Stok dipotong saat itu juga dan Kepala Admin langsung diberi tahu.</p>
+    <div class="row" style="margin-top:14px"><button onclick="dlg.close()">Tutup</button></div>`;
+  dlg.showModal();
+  const gambar = () => {
+    const q = $('tbCari').value.trim().toLowerCase();
+    const r = !q ? [] : stokRows.filter(x => ((x.sku||'')+' '+(x.product_name||'')+' '+(x.variation_name||'')).toLowerCase().includes(q)).slice(0,40);
+    $('tbHasil').innerHTML = !q ? '<p class="mute sm" style="padding:14px">Ketik minimal beberapa huruf…</p>'
+      : (r.length ? `<table><tbody>${r.map(x=>`<tr><td class="mono sm"><b>${esc(x.sku)}</b>
+          <div class="mute sm">${esc((x.product_name||'').slice(0,38))} · ${esc(x.variation_name||'—')}</div></td>
+          <td class="num sm">${nf(x.stock_on_hand)}</td>
+          <td style="width:190px"><button class="sm" onclick="kirimTambah('${esc(sn)}','${esc(x.variation_id)}','${esc(x.sku)}',1)">+1</button>
+          <button class="sm" onclick="kirimTambah('${esc(sn)}','${esc(x.variation_id)}','${esc(x.sku)}',2)">+2</button>
+          <button class="sm primary" onclick="kirimTambah('${esc(sn)}','${esc(x.variation_id)}','${esc(x.sku)}',null)">+ Lain</button></td></tr>`).join('')}</tbody></table>`
+        : '<p class="mute sm" style="padding:14px">Tidak ketemu.</p>');
+  };
+  $('tbCari').oninput = gambar; gambar();
+}
+async function kirimTambah(sn, vid, sku, n) {
+  if (n === null) { const j = prompt('Berapa ' + sku + ' yang ditambahkan?', '1'); if (j === null) return; n = parseInt(j,10); }
+  if (!(n > 0)) return pesan('Isi angka lebih dari 0.');
+  const cat = prompt('Catatan (kenapa ditambahkan)?', '') || null;
+  const { data, error } = await rpcAman('gudang_tambah_barang',
+    { p_order_sn: sn, p_variation_id: vid, p_qty: n, p_operator: petugas(), p_catatan: cat,
+      p_client_id: idKlien(), p_device: idPerangkat() }, true);
+  if (error) return pesan('Gagal: ' + error.message);
+  if (data.antre) { dlg.close(); return pesan('Disimpan luring — dikirim saat internet kembali.'); }
+  if (!data.ok) return pesan('Gagal: ' + data.code);
+  bunyi('ok'); dlg.close();
+  pesan('+' + n + ' ' + sku + ' ditambahkan ke ' + sn + ' · sisa ' + nf(data.sisa));
+  const row = stokRows.find(x => x.variation_id === vid); if (row) row.stock_on_hand = data.sisa;
+  SESI[sku] = SESI[sku] || { qty:0, fix:0, variasi:'', gambar:null, pesanan:[] };
+  SESI[sku].qty += n; SESI[sku].pesanan.push({ sn, resi:'', qty:n, fix:0, tambahan:true });
+  simpan.setJSON('gudang.sesi', SESI); gambarSku();
+}
+
+/* ---------- retur masuk ---------- */
+async function muatRetur() {
+  const { data, error } = await sb.from('retur')
+    .select('*, retur_items(sku_input,qty,variation_id)').eq('status','disetujui')
+    .order('disetujui_pada', { ascending:false }).limit(100);
+  if (error) return;
+  const list = data || [];
+  $('lencanaRetur').textContent = list.length;
+  $('kosongRetur').classList.toggle('hide', list.length > 0);
+  $('daftarRetur').innerHTML = list.map(r => `<div class="kotak" style="background:#fff;border-color:var(--line)">
+    <div class="row" style="margin-bottom:8px">
+      <div style="flex:1"><b class="mono">${esc(r.order_sn)}</b>
+        <div class="mute sm">${esc(r.tracking_no||'')} · disetujui ${esc(r.disetujui_oleh||'')} ${r.disetujui_pada?esc(new Date(r.disetujui_pada).toLocaleString('id-ID')):''}</div></div>
+      <button class="primary" onclick="terimaRetur('${esc(r.retur_id)}','${esc(r.order_sn)}')">✓ Barang sudah diterima</button>
+    </div>
+    ${r.alasan ? `<p class="sm mute" style="margin:0 0 8px">Alasan: ${esc(r.alasan)}</p>`:''}
+    <table><thead><tr><th>SKU</th><th class="num">Jumlah</th></tr></thead><tbody>
+    ${(r.retur_items||[]).map(i=>`<tr><td class="mono sm"><b>${esc(i.sku_input)}</b></td><td class="num">${i.qty}</td></tr>`).join('')}
+    </tbody></table></div>`).join('');
+}
+$('muatRetur').onclick = muatRetur;
+async function terimaRetur(id, sn) {
+  if (!confirm('Konfirmasi barang retur pesanan ' + sn + ' sudah ada di gudang?\n\nStok akan bertambah.')) return;
+  const { data, error } = await rpcAman('retur_terima',
+    { p_retur: id, p_operator: petugas(), p_client_id: idKlien(), p_device: idPerangkat() }, true);
+  if (error) return pesan('Gagal: ' + error.message);
+  if (data.antre) { pesan('Disimpan luring.'); return; }
+  if (!data.ok) return pesan('Gagal: ' + data.code);
+  bunyi('ok'); pesan('Retur ' + sn + ' diterima — ' + data.baris.length + ' SKU masuk.');
+  muatRetur(); stokRows = []; 
+}
+
+/* ---------- sesi opname ---------- */
+let OPSESI = null, OPNILAI = {};
+async function muatSesiLama() {
+  const { data } = await sb.from('opname_sesi').select('*').order('dibuat_pada',{ascending:false}).limit(10);
+  $('opLama').innerHTML = (data||[]).length ? `<h3 style="font-size:14px;margin:0 0 8px">Sesi sebelumnya</h3>
+    <div class="scroll" style="max-height:240px"><table><thead><tr><th>Tanggal</th><th>Judul</th><th>Status</th><th></th></tr></thead><tbody>
+    ${data.map(x=>`<tr><td class="sm">${new Date(x.dibuat_pada).toLocaleDateString('id-ID')}</td>
+      <td class="sm">${esc(x.judul||'—')}</td>
+      <td><span class="tag ${x.status==='disetujui'?'ok':x.status==='ditolak'?'bad':'warn'}">${esc(x.status)}</span></td>
+      <td>${x.status==='berjalan'?`<button class="sm primary" onclick="bukaSesi('${esc(x.sesi_id)}','${esc(x.judul||'')}')">Lanjutkan</button>`:''}</td></tr>`).join('')}
+    </tbody></table></div>` : '';
+}
+$('opBuat').onclick = async () => {
+  const judul = $('opJudul').value.trim() || 'Opname ' + new Date().toLocaleDateString('id-ID');
+  const shop = (stokRows[0]||{}).shop_id || null;
+  const { data, error } = await sb.from('opname_sesi')
+    .insert({ judul, shop_id: shop, dibuat_oleh: petugas() || 'gudang' }).select().single();
+  if (error) return pesan('Gagal: ' + error.message);
+  bukaSesi(data.sesi_id, judul);
+};
+async function bukaSesi(id, judul) {
+  OPSESI = id; OPNILAI = {};
+  if (!stokRows.length) await muatStok();
+  const { data } = await sb.from('opname_baris').select('*').eq('sesi_id', id);
+  (data||[]).forEach(b => OPNILAI[b.variation_id] = b.stok_hitung);
+  $('opTajuk').textContent = judul || 'Sesi opname';
+  $('opnameMulai').classList.add('hide'); $('opnameKerja').classList.remove('hide');
+  gambarOpname();
+}
+$('opTutup').onclick = () => { $('opnameKerja').classList.add('hide'); $('opnameMulai').classList.remove('hide'); muatSesiLama(); };
+$('opCari').oninput = gambarOpname;
+$('opBelum').onchange = gambarOpname;
+function gambarOpname() {
+  const q = $('opCari').value.trim().toLowerCase(), belum = $('opBelum').checked;
+  let r = stokRows.filter(x => (!q || ((x.sku||'')+' '+(x.product_name||'')+' '+(x.variation_name||'')).toLowerCase().includes(q)));
+  if (belum) r = r.filter(x => OPNILAI[x.variation_id] == null);
+  const nHit = Object.keys(OPNILAI).length;
+  const nSel = Object.entries(OPNILAI).filter(([v,h]) => { const s = stokRows.find(x=>x.variation_id===v); return s && h !== s.stock_on_hand; }).length;
+  $('opRingkas').textContent = nHit + ' dihitung · ' + nSel + ' selisih';
+  $('opBaris').innerHTML = r.slice(0,300).map(x => {
+    const h = OPNILAI[x.variation_id];
+    const sel = h == null ? null : h - x.stock_on_hand;
+    return `<tr><td class="mono sm"><b>${esc(x.sku)}</b></td>
+      <td class="sm">${esc((x.product_name||'').slice(0,40))}</td>
+      <td class="sm">${esc(x.variation_name||'—')}</td>
+      <td class="num">${nf(x.stock_on_hand)}</td>
+      <td><input class="oph" data-vid="${esc(x.variation_id)}" type="number" value="${h==null?'':h}"
+           style="min-height:36px;padding:5px 8px;text-align:right"></td>
+      <td class="num"><b style="color:${sel==null?'var(--mute)':sel===0?'var(--ok)':'var(--bad)'}">${sel==null?'—':(sel>0?'+':'')+sel}</b></td></tr>`;
+  }).join('') || '<tr><td colspan="6" class="mute" style="padding:16px">Tidak ada yang cocok.</td></tr>';
+
+  $$('#opBaris .oph').forEach(inp => {
+    inp.onkeydown = e => { if (e.key === 'Enter') inp.blur(); };
+    inp.onchange = async () => {
+      const vid = inp.dataset.vid;
+      if (inp.value === '') { delete OPNILAI[vid]; gambarOpname(); return; }
+      const n = parseInt(inp.value, 10);
+      if (isNaN(n) || n < 0) { inp.style.borderColor = 'var(--bad)'; return; }
+      const { data, error } = await sb.rpc('opname_simpan', { p_sesi: OPSESI, p_variation_id: vid, p_hitung: n, p_catatan: null });
+      if (error || !data.ok) { inp.style.borderColor = 'var(--bad)'; return pesan('Gagal: ' + (error?error.message:data.code)); }
+      inp.style.borderColor = 'var(--ok)'; setTimeout(()=>inp.style.borderColor='', 800);
+      OPNILAI[vid] = n; gambarOpname();
+    };
+  });
+}
+$('opAjukan').onclick = async () => {
+  if (!Object.keys(OPNILAI).length) return pesan('Belum ada yang dihitung.');
+  if (!confirm('Ajukan hasil hitungan ke Kepala Admin?\n\nSetelah diajukan, sesi ini terkunci dan tidak bisa diubah lagi.')) return;
+  const { data, error } = await sb.rpc('opname_ajukan', { p_sesi: OPSESI, p_operator: petugas() || 'gudang' });
+  if (error || !data.ok) return pesan('Gagal: ' + (error?error.message:data.code));
+  bunyi('ok');
+  pesan('Diajukan: ' + data.baris + ' SKU, ' + data.selisih + ' selisih. Menunggu persetujuan Kepala Admin.');
+  $('opTutup').click();
+};
+
+</script>
+</body>
+</html>
