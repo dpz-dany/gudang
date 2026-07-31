@@ -48,7 +48,7 @@ Supabase → **New project** (Singapore region). Then SQL Editor → New query:
 
 ### 2 · Hosting
 
-Gunakan repository GitHub **Private**. Commit seluruh sumber untuk backup; saat mengatur hosting, root situs adalah folder aplikasi ini.
+Repository ini **Public** agar GitHub Pages dapat berjalan pada paket GitHub Free. Jangan simpan PIN, `service_role`, atau secret lain di repository; keamanan data tetap ditegakkan oleh login dan RLS Supabase. Sumber situs diterbitkan dari branch `main`, folder `/ (root)`.
 
 ```
 index.html  admin.html  gudang.html  kepala.html  config.js  sw.js
@@ -270,7 +270,7 @@ I read this as the three "Residual risks" in the v2 README. If you meant somethi
 
 **(a) A PIN is a shared secret with no device binding.** Every scan, goods-in and force-send now records a device ID. Head Admin sees every device, names it, and can flip **Kunci perangkat** on — after which only approved devices can scan, refused in the database, not the browser. Off by default, and the UI warns you if you switch it on with nothing approved yet.
 
-**(b) Public repo.** Cloudflare Pages (below) deploys from a **private** repo. Nothing in these files is secret, but there's no reason to publish them either.
+**(b) Public repo.** Keputusan deployment saat ini adalah repository Public supaya GitHub Pages gratis dapat aktif. Hanya publishable/anon key yang boleh berada di kode browser; `service_role`, PIN, dan secret lain dilarang masuk repository.
 
 **(c) `set_role_pin` writes bcrypt into `auth.users` and could break silently.** It now verifies the new hash actually validates the new PIN and **rolls back to the old password** if not, returning `gagal_diverifikasi` instead of locking you out. It also rejects `1234`, `0000`, and all-same-digit PINs.
 
