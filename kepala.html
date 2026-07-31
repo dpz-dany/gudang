@@ -694,8 +694,11 @@ async function muatHarga() {
   $('barisHarga').innerHTML = '<tr><td colspan="6" class="mute" style="padding:16px">Memuat…</td></tr>';
   let all=[], from=0, hal=0;
   while (hal++ < 60) {
-    const { data, error } = await sb.from('v_stock_nilai').select('*').order('sku').range(from, from+999);
-    if (error) { $('barisHarga').innerHTML='<tr><td colspan="6">'+esc(error.message)+'</td></tr>'; return; }
+    const { data, error } = await sb.rpc('kepala_daftar_harga', { p_offset:from, p_limit:1000 });
+    if (error) {
+      $('barisHarga').innerHTML='<tr><td colspan="6" class="bad" style="padding:16px">Gagal memuat harga: '+esc(error.message)+'</td></tr>';
+      return;
+    }
     if (!data || !data.length) break;
     all = all.concat(data); if (data.length < 1000) break; from += 1000;
   }
@@ -708,7 +711,7 @@ function gambarHarga() {
   const q = $('cariHarga').value.trim().toLowerCase(), only = $('hanyaKosong').checked;
   const rows = HARGA.filter(r => (!q || ((r.sku||'')+' '+(r.product_name||'')).toLowerCase().includes(q)) && (!only || r.price == null));
   const tot = HARGA.reduce((s,r)=>s+(+r.nilai||0),0);
-  $('hTotal').textContent = tot ? 'Rp '+Math.round(tot).toLocaleString('id-ID') : '—';
+  $('hTotal').textContent = HARGA.length ? 'Rp '+Math.round(tot).toLocaleString('id-ID') : '—';
   $('hTotal').style.fontSize = '20px';
   $('hIsi').textContent = nf(HARGA.filter(r=>r.price!=null).length);
   $('hKosong').textContent = nf(HARGA.filter(r=>r.price==null).length);
@@ -724,9 +727,17 @@ function gambarHarga() {
   </tr>`).join('') || '<tr><td colspan="6" class="mute" style="padding:16px">Tidak ada yang cocok.</td></tr>';
 
   $$('#barisHarga .hrg').forEach(inp => inp.onchange = async () => {
-    const vid = inp.dataset.vid, v = inp.value === '' ? null : +inp.value;
-    const { error } = await sb.from('variations').update({ price: v }).eq('variation_id', vid);
-    if (error) { inp.style.borderColor='var(--bad)'; return pesan('Gagal: '+error.message); }
+    const vid = inp.dataset.vid, teks = inp.value.trim();
+    const v = teks === '' ? null : Number(teks);
+    if (v !== null && (!Number.isFinite(v) || v < 0)) {
+      inp.style.borderColor='var(--bad)';
+      return pesan('Harga harus 0 atau lebih. Kosongkan bila belum ada harga.');
+    }
+    const { data, error } = await sb.rpc('kepala_simpan_harga', { p_variation_id:vid, p_price:v });
+    if (error || !data?.ok) {
+      inp.style.borderColor='var(--bad)';
+      return pesan('Gagal: '+(error ? error.message : data?.code || 'harga_tidak_tersimpan'));
+    }
     inp.style.borderColor='var(--ok)'; setTimeout(()=>inp.style.borderColor='', 900);
     const r = HARGA.find(x=>x.variation_id===vid);
     if (r) { r.price=v; r.nilai = v==null?null:v*r.stock_on_hand;

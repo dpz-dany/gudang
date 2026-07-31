@@ -36,7 +36,7 @@ Set SKUs on those listings in Shopee. Everything else is a workaround.
 
 Supabase → **New project** (Singapore region). Then SQL Editor → New query:
 
-1. Jalankan SQL secara berurutan: **`01_schema.sql`**, **`02_akun_dan_toko.sql`**, **`03_patch.sql`**, **`04_patch.sql`**, **`05_edit_sku.sql`**, **`06_sku_induk_dan_persetujuan.sql`**, lalu **`07_persetujuan_stok_dan_keamanan.sql`**.
+1. Jalankan SQL secara berurutan: **`01_schema.sql`**, **`02_akun_dan_toko.sql`**, **`03_patch.sql`**, **`04_patch.sql`**, **`05_edit_sku.sql`**, **`06_sku_induk_dan_persetujuan.sql`**, **`07_persetujuan_stok_dan_keamanan.sql`**, lalu **`08_harga_kepala.sql`**.
 2. Database → Extensions → pastikan **`pg_cron`** aktif. Patch v7 mendaftarkan purge bulanan untuk catatan operasional yang berumur lebih dari satu tahun.
 3. Authentication → Users → Add user ×3 (tick *Auto Confirm User*):
    - `admin@gudang.local` — password is the Admin Harian PIN
@@ -415,3 +415,11 @@ Jalankan **`07_persetujuan_stok_dan_keamanan.sql`** setelah patch v6. Patch ini 
 - Tampilan Gudang langsung menunjukkan label `+… menunggu`, tetapi angka stok aktual tetap terpisah sampai disetujui.
 - Fungsi purge lebih dari satu tahun hanya dapat dijalankan oleh pemilik database/cron. Akses `anon` dan `authenticated` dicabut, dan view nilai stok memakai `security_invoker=on`.
 - Jadwal `pg_cron` berjalan setiap tanggal 1 pukul 03:00 UTC dan membersihkan riwayat operasional, termasuk pengajuan stok. Master SKU, akun, toko, pengaturan, dan buku terjemahan tetap disimpan.
+
+# v8 — akses Harga & Nilai Kepala Admin
+
+Jalankan **`08_harga_kepala.sql`** setelah patch v7. Patch ini aman dijalankan ulang.
+
+- Menu **Harga & Nilai** membaca dan menyimpan harga melalui fungsi khusus Kepala Admin, sehingga tidak lagi gagal dengan pesan `permission denied for table variations`.
+- Kolom `price` tidak diberikan kepada sesi biasa. Admin Harian dan Gudang tetap hanya dapat membaca kolom operasional tanpa harga.
+- Nilai stok nol ditampilkan jelas sebagai **Rp 0**, bukan tanda kosong.
