@@ -73,6 +73,13 @@
       <div><label>No. Resi (opsional)</label><input id="rtResi" placeholder="mis. SPXID0656…"></div>
       <div><label>Alasan retur</label><input id="rtAlasan" placeholder="mis. paket ditolak pembeli (COD)"></div>
     </div>
+    <div id="rtStatus" class="kotak warn" style="margin-top:14px">
+      <b>Masukkan nomor pesanan</b><div class="sm" style="margin-top:4px">Sistem akan memeriksa riwayat pengiriman dan membantu mengisi barang.</div>
+    </div>
+    <label id="rtLamaBungkus" class="hide" style="display:flex;align-items:flex-start;gap:9px;text-transform:none;font-size:14px;font-weight:500;margin:12px 0 0">
+      <input type="checkbox" id="rtLama" style="width:auto;min-height:auto;margin-top:4px">
+      <span>Pesanan ini dikirim sebelum sistem gudang mulai dipakai. Saya sudah memeriksa barang fisiknya.</span>
+    </label>
 
     <h3 style="font-size:14px;margin:20px 0 8px">Barang yang kembali</h3>
     <div class="scroll" style="max-height:320px"><table>
@@ -108,12 +115,15 @@
 <script src="assets/parser.js"></script>
 <script>
 let TOKO = [], HASIL = [], BATCH = null;
+let RT_CEK = null, RT_TANGGAL_MULAI = '2026-07-31';
 
 (async () => {
   if (!await jagaHalaman('admin')) return;
   pasangTab(['impor','stok','retur'], 'impor');
   const { data } = await sb.from('shops').select('*').eq('active', true).order('name');
   TOKO = data || [];
+  const { data: aturRetur } = await sb.from('pengaturan').select('nilai').eq('kunci','tanggal_mulai_sistem').maybeSingle();
+  if (aturRetur && aturRetur.nilai) RT_TANGGAL_MULAI = aturRetur.nilai;
 })();
 window.onTab = t => {
   if (t === 'stok'  && !stokRows.length) muatStok();
@@ -340,15 +350,53 @@ async function konfirmasi() {
 function isiTokoRetur() {
   $('rtToko').innerHTML = TOKO.map(t => `<option value="${esc(t.shop_id)}">${esc(t.name)}</option>`).join('');
 }
-function rtBarisBaru() {
+function rtBarisBaru(item = null) {
   const tr = document.createElement('tr');
-  tr.innerHTML = `<td><input class="rtSku" placeholder="SKU atau nama produk"></td>
-    <td><input class="rtVar" placeholder="mis. Hitam"></td>
-    <td><input class="rtQty" type="number" value="1" min="1" style="text-align:right"></td>
+  const terkunci = !!item;
+  tr.innerHTML = `<td><input class="rtSku" placeholder="SKU atau nama produk" value="${esc(item ? item.sku : '')}" ${terkunci?'readonly':''}></td>
+    <td><input class="rtVar" placeholder="mis. Hitam" value="${esc(item ? (item.variasi || '') : '')}" ${terkunci?'readonly':''}></td>
+    <td><input class="rtQty" type="number" value="${item ? item.qty_terkirim : '1'}" min="1" ${item ? `max="${esc(item.qty_terkirim)}" data-maks="${esc(item.qty_terkirim)}"` : ''} style="text-align:right"></td>
     <td><button class="ghost sm" onclick="this.closest('tr').remove()">✕</button></td>`;
   $('rtBaris').appendChild(tr);
 }
-$('rtTambahBaris').onclick = rtBarisBaru;
+$('rtTambahBaris').onclick = () => rtBarisBaru();
+
+async function rtPeriksaPesanan() {
+  const order = $('rtOrder').value.trim();
+  RT_CEK = null;
+  if (!order || !$('rtToko').value) {
+    $('rtStatus').className = 'kotak warn';
+    $('rtStatus').innerHTML = '<b>Masukkan nomor pesanan</b><div class="sm" style="margin-top:4px">Sistem akan memeriksa riwayat pengiriman dan membantu mengisi barang.</div>';
+    $('rtLamaBungkus').classList.add('hide'); return;
+  }
+  $('rtStatus').className = 'kotak warn'; $('rtStatus').innerHTML = '<b>Memeriksa pesanan…</b>';
+  const { data, error } = await sb.rpc('cek_pesanan_retur', { p_shop:$('rtToko').value, p_order_sn:order });
+  if (error) {
+    $('rtStatus').className = 'kotak bad';
+    $('rtStatus').innerHTML = '<b>Pemeriksaan riwayat gagal</b><div class="sm">Pengajuan tetap dapat diisi manual. ' + esc(error.message) + '</div>';
+    $('rtLamaBungkus').classList.remove('hide'); return;
+  }
+  RT_CEK = data;
+  if (data.ada) {
+    const lama = data.packed_at && new Date(data.packed_at) < new Date(RT_TANGGAL_MULAI + 'T00:00:00+07:00');
+    $('rtStatus').className = 'kotak ok';
+    $('rtStatus').innerHTML = `<b>Pesanan ditemukan</b><div class="sm" style="margin-top:4px">Dikirim ${data.packed_at ? esc(new Date(data.packed_at).toLocaleString('id-ID')) : '—'}. Jumlah retur tidak boleh melebihi jumlah yang dikirim.</div>${lama ? `<div style="margin-top:7px">${lencanaError(30)}</div>` : ''}`;
+    $('rtResi').value = $('rtResi').value || data.tracking_lama || '';
+    $('rtBaris').innerHTML = '';
+    (data.baris || []).forEach(rtBarisBaru);
+    if (!(data.baris || []).length) rtBarisBaru();
+    $('rtLama').checked = !!lama; $('rtLamaBungkus').classList.toggle('hide', !lama);
+  } else {
+    $('rtStatus').className = 'kotak bad';
+    $('rtStatus').innerHTML = `<b>Pesanan tidak ditemukan</b><div class="sm" style="margin-top:4px">Pengajuan tetap bisa dikirim. Centang pesanan lama bila dikirim sebelum ${esc(new Date(RT_TANGGAL_MULAI+'T00:00:00+07:00').toLocaleDateString('id-ID'))}; bila tidak, Kepala Admin akan menerima peringatan COD tidak ditemukan.</div><div style="margin-top:7px">${lencanaError(33)}</div>`;
+    $('rtLama').checked = false; $('rtLamaBungkus').classList.remove('hide');
+    const skuInputs = $$('#rtBaris .rtSku');
+    const semuaTerkunci = skuInputs.length && skuInputs.every(x => x.readOnly);
+    if (semuaTerkunci) { $('rtBaris').innerHTML = ''; rtBarisBaru(); }
+  }
+}
+$('rtOrder').onchange = $('rtOrder').onblur = rtPeriksaPesanan;
+$('rtToko').onchange = rtPeriksaPesanan;
 
 $('rtKirim').onclick = async () => {
   const order = $('rtOrder').value.trim();
@@ -357,8 +405,10 @@ $('rtKirim').onclick = async () => {
   $$('#rtBaris tr').forEach(tr => {
     const sku = tr.querySelector('.rtSku').value.trim();
     const qty = parseInt(tr.querySelector('.rtQty').value, 10) || 1;
+    const maks = parseInt(tr.querySelector('.rtQty').dataset.maks || '0', 10);
     const va  = tr.querySelector('.rtVar').value.trim() || null;
-    if (sku) items.push({ sku, qty, variasi: va, produk: sku });
+    if (sku) items.push({ sku, qty, variasi: va, produk: sku,
+      pesanan_lama:$('rtLama').checked, qty_maks:maks || null });
   });
   if (!items.length) { $('rtPesan').style.color='var(--bad)'; $('rtPesan').textContent='Isi minimal satu SKU.'; return; }
 
@@ -367,8 +417,18 @@ $('rtKirim').onclick = async () => {
     p_shop: $('rtToko').value, p_order_sn: order, p_tracking: $('rtResi').value.trim() || null,
     p_alasan: $('rtAlasan').value.trim() || null, p_items: items, p_operator: petugas() || 'admin' });
   $('rtKirim').disabled = false;
-  if (error || !data.ok) { $('rtPesan').style.color='var(--bad)';
-    $('rtPesan').textContent = 'Gagal: ' + (error ? error.message : data.code); return; }
+  if (error || !data.ok) {
+    $('rtPesan').style.color='var(--bad)';
+    let detail = error ? error.message : data.code;
+    try {
+      const j = JSON.parse(detail);
+      if (j.code === 'qty_melebihi_pengiriman')
+        detail = `Jumlah retur ${j.sku || ''} melebihi barang yang dikirim. Maksimal ${nf(j.qty_maks)} unit.`;
+    } catch(e) {}
+    if (data && data.code === 'qty_melebihi_pengiriman')
+      detail = `Jumlah retur melebihi pengiriman. Maksimal ${nf(data.qty_maks)} unit.`;
+    $('rtPesan').textContent = 'Gagal: ' + detail; return;
+  }
 
   const belum = data.belum_cocok || [];
   $('rtPesan').style.color = belum.length ? 'var(--warn)' : 'var(--ok)';
@@ -376,6 +436,10 @@ $('rtKirim').onclick = async () => {
     ? `Terkirim, tapi ${belum.length} SKU belum cocok (${belum.map(b=>b.sku).join(', ')}) — Kepala Admin belum bisa menyetujui sebelum itu dibetulkan.`
     : `✅ Terkirim. Menunggu persetujuan Kepala Admin.`;
   $('rtOrder').value = $('rtResi').value = $('rtAlasan').value = '';
+  RT_CEK = null; $('rtLama').checked = false;
+  $('rtStatus').className = 'kotak warn';
+  $('rtStatus').innerHTML = '<b>Masukkan nomor pesanan</b><div class="sm" style="margin-top:4px">Sistem akan memeriksa riwayat pengiriman dan membantu mengisi barang.</div>';
+  $('rtLamaBungkus').classList.add('hide');
   $('rtBaris').innerHTML = ''; rtBarisBaru(); rtMuatRiwayat();
 };
 
@@ -391,7 +455,7 @@ async function rtMuatRiwayat() {
       <td class="sm">${(r.retur_items||[]).map(i=>esc(i.sku_input)+' ×'+i.qty +
           (i.variation_id?'':' <span class="tag bad">belum cocok</span>')).join('<br>')}</td>
       <td class="sm mute">${esc(r.alasan||'')}</td>
-      <td><span class="tag ${w}">${esc(l)}</span></td>
+      <td><span class="tag ${w}">${esc(l)}</span>${r.kode_error ? `<div style="margin-top:4px">${lencanaError(r.kode_error)}</div>` : ''}</td>
       <td class="sm mute">${esc(r.alasan_tolak || r.catatan || '')}</td></tr>`;
   }).join('') || '<tr><td colspan="6" class="mute" style="padding:16px">Belum ada pengajuan retur.</td></tr>';
 }

@@ -9,6 +9,35 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
 const nf  = n => Number(n || 0).toLocaleString('id-ID');
 const rp  = n => (n == null || n === '') ? '—' : 'Rp ' + Number(n).toLocaleString('id-ID');
 
+const ATURAN_ERROR = Object.freeze({
+  1:{judul:'Label tidak terbaca',sebab:'PDF rusak atau format asing',tindakan:'Unggah ulang PDF yang benar atau masukkan pesanan melalui alur yang tersedia.'},
+  2:{judul:'Toko tidak dikenal di label',sebab:'Nama pengirim belum terdaftar',tindakan:'Admin memilih toko secara manual lalu Kepala menambahkan nama pengirim.'},
+  3:{judul:'Toko tidak ditemukan',sebab:'Kiriman bukan milik toko yang terdaftar',tindakan:'Kepala menolak kiriman dengan alasan yang jelas.'},
+  10:{judul:'SKU kosong di label',sebab:'Label tidak mencetak Seller SKU',tindakan:'Kepala memetakan nama produk ke SKU yang benar.'},
+  11:{judul:'SKU tidak ada di master',sebab:'SKU label belum terdaftar',tindakan:'Kepala menambah atau memetakan SKU.'},
+  12:{judul:'SKU ganda',sebab:'Satu SKU dipakai dua variasi',tindakan:'Kepala memperbaiki salah satu kode SKU.'},
+  20:{judul:'Jumlah salah baca',sebab:'Hasil pembacaan PDF perlu dikoreksi',tindakan:'Admin mengisi +FIX sebelum konfirmasi.'},
+  21:{judul:'Pesanan asing',sebab:'Pesanan bukan barang kita',tindakan:'Gudang menolak pesanan dan mencatat alasannya.'},
+  22:{judul:'Pesanan dikirim paksa',sebab:'Sebagian SKU belum dapat dipotong',tindakan:'Kepala memeriksa barang yang belum terpotong.'},
+  23:{judul:'Pesanan diterima sebagian',sebab:'Gudang hanya mengirim barang yang dipilih',tindakan:'Kepala memeriksa barang yang tidak dikirim.'},
+  30:{judul:'Retur pesanan lama',sebab:'Dikirim sebelum sistem dipakai (wajar)',tindakan:'Kepala memeriksa SKU lalu menyetujui bila fisiknya benar.'},
+  31:{judul:'Retur ditolak Kepala',sebab:'Pengajuan retur tidak disetujui',tindakan:'Baca alasan penolakan dan perbaiki bila perlu.'},
+  32:{judul:'Retur melebihi pengiriman',sebab:'Jumlah retur lebih besar dari jumlah yang pernah dikirim',tindakan:'Admin mengurangi jumlah sesuai riwayat pengiriman.'},
+  33:{judul:'Retur COD tidak ditemukan',sebab:'No. Pesanan seharusnya sudah tercatat',tindakan:'Kepala memeriksa nomor pesanan dan barang fisik.'},
+  40:{judul:'Opname janggal',sebab:'Selisih di luar batas wajar',tindakan:'Kepala wajib meninjau dan menandai sudah diperiksa.'},
+  41:{judul:'Opname ditolak Kepala',sebab:'Hasil hitungan belum dapat disetujui',tindakan:'Gudang membuat hitungan baru sesuai alasan penolakan.'},
+  50:{judul:'Stok minus',sebab:'Stok menjadi minus setelah pemotongan',tindakan:'Lakukan opname dan telusuri gerakan stok.'},
+  51:{judul:'Pemindaian ganda ditolak',sebab:'Pesanan sudah pernah dipindai',tindakan:'Jangan potong stok lagi; periksa riwayat bila perlu.'},
+  60:{judul:'Barang ditambahkan Gudang',sebab:'Barang tidak tercantum pada label',tindakan:'Kepala memeriksa alasan dan gerakan stok.'},
+  70:{judul:'Peminjaman melewati batas',sebab:'Barang dipinjam lebih dari 14 hari',tindakan:'Minta pengembalian atau perbarui tindak lanjut.'}
+});
+function lencanaError(kode) {
+  const a = ATURAN_ERROR[Number(kode)];
+  if (!a) return '';
+  const warna = Number(kode) === 30 ? '' : Number(kode) === 33 ? 'bad' : 'warn';
+  return `<span class="tag ${warna}" title="${esc(a.sebab)}">${Number(kode)} · ${esc(a.judul)}</span>`;
+}
+
 const simpan = {
   get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; }
               catch (e) { return (this._m || {})[k] ?? d; } },
@@ -136,10 +165,47 @@ async function jagaHalaman(peranWajib) {
   if (r !== peranWajib && r !== 'kepala') { location.href = 'index.html'; return false; }
   const w = $('siapa'); if (w) w.textContent = ({admin:'Admin Harian', gudang:'Gudang', kepala:'Kepala Admin'})[r] || r;
   const nm = $('namaPetugas');
-  if (nm) { nm.value = simpan.get('gudang.petugas', ''); nm.oninput = e => simpan.set('gudang.petugas', e.target.value); }
+  if (nm) {
+    if (nm.tagName === 'SELECT') await muatPilihanPetugas(nm);
+    else nm.value = simpan.get('gudang.petugas', '');
+    nm.onchange = nm.oninput = e => simpan.set('gudang.petugas', e.target.value);
+  }
   return true;
 }
 const petugas = () => (($('namaPetugas') || {}).value || '').trim() || null;
+
+async function muatPilihanPetugas(el = $('namaPetugas')) {
+  if (!el || !sb) return;
+  const dipilih = simpan.get('gudang.petugas', '');
+  const { data, error } = await sb.from('petugas_gudang').select('nama').eq('aktif', true).order('nama');
+  const rows = error ? [] : (data || []);
+  el.innerHTML = '<option value="">— pilih petugas —</option>' +
+    rows.map(x => `<option value="${esc(x.nama)}">${esc(x.nama)}</option>`).join('');
+  if (rows.some(x => x.nama === dipilih)) el.value = dipilih;
+  else if (rows.some(x => x.nama === 'Mandor')) {
+    el.value = 'Mandor';
+    simpan.set('gudang.petugas', 'Mandor');
+  }
+}
+
+/* Dialog operasional: tombol tutup selalu tersedia, tombol bawah tetap terlihat,
+   Escape tetap native, dan ketukan pada latar menutup dialog. */
+function siapkanDialog(dlg) {
+  if (!dlg || dlg.dataset.siap === '1') return;
+  dlg.dataset.siap = '1';
+  const pasangTutup = () => {
+    const isi = dlg.querySelector('.dlg');
+    if (isi && !isi.querySelector('.dlg-x')) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'dlg-x'; b.setAttribute('aria-label','Tutup');
+      b.textContent = '×'; b.onclick = () => dlg.close(); isi.prepend(b);
+    }
+  };
+  new MutationObserver(pasangTutup).observe(dlg, { childList:true, subtree:true });
+  dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+  pasangTutup();
+}
+addEventListener('DOMContentLoaded', () => $$('dialog').forEach(siapkanDialog));
 
 /* ---------------- antrean luring ---------------- */
 const ANTREAN = 'gudang.antrean';
@@ -230,13 +296,14 @@ function kelompokStokInduk(rows) {
     if (!g) {
       g = { id, shop_id:r.shop_id, sku_induk:induk,
         product_name:r.product_name || '', image_url:r.image_url || null,
-        stock_on_hand:0, jumlah_tipe:0, perlu_restock:false,
+        stock_on_hand:0, stok_dipinjam:0, jumlah_tipe:0, perlu_restock:false,
         ada_stok_kosong:false, ada_stok_minus:false, variasi:[] };
       map.set(id, g);
     }
     if (!g.product_name && r.product_name) g.product_name = r.product_name;
     if (!g.image_url && r.image_url) g.image_url = r.image_url;
     g.stock_on_hand += Number(r.stock_on_hand || 0);
+    g.stok_dipinjam += Number(r.stok_dipinjam || 0);
     g.jumlah_tipe += 1;
     g.perlu_restock ||= !!r.perlu_restock;
     g.ada_stok_kosong ||= Number(r.stock_on_hand || 0) === 0;
