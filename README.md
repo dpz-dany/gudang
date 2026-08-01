@@ -430,4 +430,4 @@ Jalankan **`09_koreksi_stok_kepala.sql`** setelah patch v8. Patch ini aman dijal
 
 - Koreksi stok Kepala memakai fungsi khusus `kepala_koreksi_stok`, bukan lagi fungsi umum stok masuk.
 - Nilai baru divalidasi sebagai bilangan bulat 0 atau lebih, dikunci dalam transaksi, dan dicatat sebagai `opname` di riwayat stok.
-- Dialog menampilkan stok lama, stok baru, dan selisih sebelum Kepala mengonfirmasi penyimpanan.
+- Dialog menampilkan stok lama, stok baru, dan selisih; tombol harus diklik dua kali untuk mengonfirmasi tanpa popup browser.

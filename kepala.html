@@ -547,6 +547,8 @@ async function simpanPendingStok() {
 function tampilSelisihKoreksi(vid) {
   const r = STOK.find(x=>x.variation_id===vid), el = $('dlgSelisih');
   if (!r || !el) return;
+  const tombol = $('dlgKoreksiSimpan');
+  if (tombol) { tombol.dataset.konfirmasi=''; tombol.textContent='Simpan koreksi stok'; tombol.disabled=false; }
   const teks = (($('dlgOp')||{}).value || '').trim(), n = Number(teks);
   if (teks === '') { el.textContent = 'Isi jumlah fisik yang benar.'; el.style.color = ''; return; }
   if (!Number.isInteger(n) || n < 0) {
@@ -564,9 +566,12 @@ async function koreksiStokKepala(vid) {
   if (!Number.isInteger(n) || n < 0) return pesan('Stok baru harus bilangan bulat 0 atau lebih.');
   if (n === r.stock_on_hand) return pesan('Stok sudah '+nf(n)+'. Tidak ada yang perlu dikoreksi.');
   const d = n-r.stock_on_hand;
-  if (!confirm('Koreksi stok '+r.sku+'?\n\nStok sistem: '+nf(r.stock_on_hand)+'\nHasil fisik: '+nf(n)+'\nSelisih: '+(d>0?'+':'')+nf(d))) return;
-
   const tombol = $('dlgKoreksiSimpan');
+  if (tombol.dataset.konfirmasi !== String(n)) {
+    tombol.dataset.konfirmasi = String(n);
+    tombol.textContent = 'Klik lagi: konfirmasi '+nf(n);
+    return pesan('Periksa selisih, lalu klik tombol sekali lagi untuk menyimpan.');
+  }
   tombol.disabled = true; tombol.textContent = 'Menyimpan…';
   const { data, error } = await sb.rpc('kepala_koreksi_stok', {
     p_variation_id:vid, p_stok_baru:n, p_catatan:'koreksi langsung dari halaman stok',

@@ -1,7 +1,7 @@
 /* Service worker: rangka aplikasi disimpan supaya halaman tetap terbuka
    waktu internet mati. Data TIDAK disimpan di sini — data lewat localStorage
    dan antrean di core.js. */
-const CACHE = 'gudang-v9';
+const CACHE = 'gudang-v10';
 const RANGKA = [
   './', './index.html', './admin.html', './gudang.html', './kepala.html', './foto-shopee.html',
   './config.js', './assets/app.css', './assets/core.js', './assets/parser.js',
