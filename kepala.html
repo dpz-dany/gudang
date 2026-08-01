@@ -544,14 +544,44 @@ async function simpanPendingStok() {
   if (ok) bunyi('ok');
   pesan(ok + ' tipe SKU disimpan' + (Object.keys(gagal).length ? ' · ' + Object.keys(gagal).length + ' gagal dan tetap menunggu' : '') + '.');
 }
-async function opname(vid) {
-  const n = parseInt(($('dlgOp')||{}).value, 10);
-  if (isNaN(n)) return pesan('Isi angka hasil hitungan.');
-  const { data, error } = await sb.rpc('stock_in', { p_variation_id: vid, p_qty: n, p_reason:'opname',
-    p_note:'hitung fisik', p_ref:null, p_operator: petugas()||'kepala', p_client_id:null });
-  if (error || !data.ok) return pesan('Gagal: ' + (error?error.message:data.code));
-  const r = STOK.find(x=>x.variation_id===vid); if (r) r.stock_on_hand = data.sisa;
-  dlg.close(); gambarStok(); ringkasan(); pesan('Disetel ke ' + nf(data.sisa));
+function tampilSelisihKoreksi(vid) {
+  const r = STOK.find(x=>x.variation_id===vid), el = $('dlgSelisih');
+  if (!r || !el) return;
+  const teks = (($('dlgOp')||{}).value || '').trim(), n = Number(teks);
+  if (teks === '') { el.textContent = 'Isi jumlah fisik yang benar.'; el.style.color = ''; return; }
+  if (!Number.isInteger(n) || n < 0) {
+    el.textContent = 'Stok baru harus bilangan bulat 0 atau lebih.'; el.style.color = 'var(--bad)'; return;
+  }
+  const d = n-r.stock_on_hand;
+  el.textContent = d === 0 ? 'Tidak ada perubahan stok.' :
+    'Stok akan berubah '+nf(r.stock_on_hand)+' → '+nf(n)+' (selisih '+(d>0?'+':'')+nf(d)+').';
+  el.style.color = d === 0 ? '' : 'var(--brand)';
+}
+async function koreksiStokKepala(vid) {
+  const r = STOK.find(x=>x.variation_id===vid); if (!r) return pesan('SKU tidak ditemukan. Muat ulang stok.');
+  if (PENDING[vid]) return pesan('Simpan atau batalkan tambahan stok yang masih menunggu sebelum melakukan koreksi.');
+  const teks = (($('dlgOp')||{}).value || '').trim(), n = Number(teks);
+  if (!Number.isInteger(n) || n < 0) return pesan('Stok baru harus bilangan bulat 0 atau lebih.');
+  if (n === r.stock_on_hand) return pesan('Stok sudah '+nf(n)+'. Tidak ada yang perlu dikoreksi.');
+  const d = n-r.stock_on_hand;
+  if (!confirm('Koreksi stok '+r.sku+'?\n\nStok sistem: '+nf(r.stock_on_hand)+'\nHasil fisik: '+nf(n)+'\nSelisih: '+(d>0?'+':'')+nf(d))) return;
+
+  const tombol = $('dlgKoreksiSimpan');
+  tombol.disabled = true; tombol.textContent = 'Menyimpan…';
+  const { data, error } = await sb.rpc('kepala_koreksi_stok', {
+    p_variation_id:vid, p_stok_baru:n, p_catatan:'koreksi langsung dari halaman stok',
+    p_operator:petugas()||'kepala'
+  });
+  if (error || !data?.ok) {
+    tombol.disabled = false; tombol.textContent = 'Simpan koreksi stok';
+    return pesan('Gagal menyimpan koreksi: ' + (error ? error.message : data?.code || 'hasil_tidak_dikenal'));
+  }
+
+  r.stock_on_hand = data.sisa;
+  const h = HARGA.find(x=>x.variation_id===vid);
+  if (h) { h.stock_on_hand=data.sisa; h.nilai=h.price==null?null:(+h.price*data.sisa); }
+  dlg.close(); gambarStok(); ringkasan(); bunyi('ok');
+  pesan(r.sku+' dikoreksi '+nf(data.stok_lama)+' → '+nf(data.sisa)+' dan tercatat di riwayat.');
 }
 async function setRop(vid) {
   const n = parseInt(($('dlgRop')||{}).value, 10);
@@ -653,10 +683,12 @@ function editStokKepala(vid) {
         <div><label>SKU Induk</label><input id="edInduk" value="${esc(r.parent_sku || '')}" readonly><p class="mute sm">Ubah SKU Induk melalui menu Produk & Foto agar seluruh tipe tetap satu kelompok.</p></div></div>
       <button id="edSimpanNama" style="margin-top:12px" onclick="simpanEditStokKepala()">Simpan nama/kode ke Supabase</button></div>
     <div class="kotak" style="margin-top:14px"><h3 style="margin-bottom:10px">Koreksi stok</h3>
-      <div class="row"><div style="width:160px"><label>Hitung fisik (opname)</label><input id="dlgOp" type="number" placeholder="${r.stock_on_hand}"></div>
-        <div style="align-self:end"><button onclick="opname('${esc(vid)}')">Setel hasil hitung</button></div>
+      <p class="sub">Masukkan jumlah fisik yang benar. Koreksi berlaku langsung dan otomatis dicatat di riwayat stok.</p>
+      <div class="row"><div style="width:190px"><label>Stok baru (hasil fisik)</label><input id="dlgOp" type="number" min="0" step="1" placeholder="${r.stock_on_hand}" oninput="tampilSelisihKoreksi('${esc(vid)}')"></div>
+        <div style="align-self:end"><button id="dlgKoreksiSimpan" class="primary" onclick="koreksiStokKepala('${esc(vid)}')">Simpan koreksi stok</button></div>
         <div style="width:150px"><label>Titik pesan ulang</label><input id="dlgRop" type="number" value="${r.reorder_point}"></div>
-        <div style="align-self:end"><button onclick="setRop('${esc(vid)}')">Simpan titik</button></div></div></div>
+        <div style="align-self:end"><button onclick="setRop('${esc(vid)}')">Simpan titik</button></div></div>
+      <p id="dlgSelisih" class="sm mute" style="margin:9px 0 0">Isi jumlah fisik yang benar.</p></div>
     <div class="row" style="margin-top:16px"><button onclick="bukaInduk('${esc(kembali)}')">Kembali</button></div>`;
 }
 function antreDariEditKepala(vid) {

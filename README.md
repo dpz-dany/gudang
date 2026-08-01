@@ -1,4 +1,4 @@
-# Sistem Gudang v7 — developer setup
+# Sistem Gudang v9 — developer setup
 
 Multi-shop Shopee stock system. Three role-gated pages, Supabase for live data, GitHub Pages for hosting and product photos.
 
@@ -36,7 +36,7 @@ Set SKUs on those listings in Shopee. Everything else is a workaround.
 
 Supabase → **New project** (Singapore region). Then SQL Editor → New query:
 
-1. Jalankan SQL secara berurutan: **`01_schema.sql`**, **`02_akun_dan_toko.sql`**, **`03_patch.sql`**, **`04_patch.sql`**, **`05_edit_sku.sql`**, **`06_sku_induk_dan_persetujuan.sql`**, **`07_persetujuan_stok_dan_keamanan.sql`**, lalu **`08_harga_kepala.sql`**.
+1. Jalankan SQL secara berurutan: **`01_schema.sql`**, **`02_akun_dan_toko.sql`**, **`03_patch.sql`**, **`04_patch.sql`**, **`05_edit_sku.sql`**, **`06_sku_induk_dan_persetujuan.sql`**, **`07_persetujuan_stok_dan_keamanan.sql`**, **`08_harga_kepala.sql`**, lalu **`09_koreksi_stok_kepala.sql`**.
 2. Database → Extensions → pastikan **`pg_cron`** aktif. Patch v7 mendaftarkan purge bulanan untuk catatan operasional yang berumur lebih dari satu tahun.
 3. Authentication → Users → Add user ×3 (tick *Auto Confirm User*):
    - `admin@gudang.local` — password is the Admin Harian PIN
@@ -423,3 +423,11 @@ Jalankan **`08_harga_kepala.sql`** setelah patch v7. Patch ini aman dijalankan u
 - Menu **Harga & Nilai** membaca dan menyimpan harga melalui fungsi khusus Kepala Admin, sehingga tidak lagi gagal dengan pesan `permission denied for table variations`.
 - Kolom `price` tidak diberikan kepada sesi biasa. Admin Harian dan Gudang tetap hanya dapat membaca kolom operasional tanpa harga.
 - Nilai stok nol ditampilkan jelas sebagai **Rp 0**, bukan tanda kosong.
+
+# v9 — koreksi stok Kepala Admin
+
+Jalankan **`09_koreksi_stok_kepala.sql`** setelah patch v8. Patch ini aman dijalankan ulang.
+
+- Koreksi stok Kepala memakai fungsi khusus `kepala_koreksi_stok`, bukan lagi fungsi umum stok masuk.
+- Nilai baru divalidasi sebagai bilangan bulat 0 atau lebih, dikunci dalam transaksi, dan dicatat sebagai `opname` di riwayat stok.
+- Dialog menampilkan stok lama, stok baru, dan selisih sebelum Kepala mengonfirmasi penyimpanan.
