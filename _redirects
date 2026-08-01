@@ -1,0 +1,9 @@
+/01_schema.sql                          /  301
+/02_akun_dan_toko.sql                   /  301
+/03_patch.sql                           /  301
+/04_patch.sql                           /  301
+/05_edit_sku.sql                        /  301
+/06_sku_induk_dan_persetujuan.sql       /  301
+/07_persetujuan_stok_dan_keamanan.sql   /  301
+/08_harga_kepala.sql                    /  301
+/09_koreksi_stok_kepala.sql             /  301
