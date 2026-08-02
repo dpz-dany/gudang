@@ -181,7 +181,11 @@ function wajibPetugas() {
 }
 
 /* ---------- kotak pindai selalu fokus ---------- */
-function fokus() { const b = $('pindai'); if (b && !$('tab-pindai').classList.contains('hide')) b.focus(); }
+function fokus() {
+  const b = $('pindai');
+  if ($('dlg')?.open) return;
+  if (b && !$('tab-pindai').classList.contains('hide')) b.focus();
+}
 document.addEventListener('click', e => { if (!e.target.closest('input,select,button,a,dialog')) fokus(); });
 setInterval(fokus, 1500);
 
@@ -268,7 +272,7 @@ function tampilHasil(r, kode) {
     </div>` : ''}
     ${!['sudah_dipindai','dibatalkan','kosong','tidak_berwenang'].includes(r.code) ?
       `<div class="row" style="margin:12px 0 4px">
-        <button class="danger" onclick="tolakPesananGudang('${esc(r.order_sn || kode)}')">Tolak pesanan</button>
+        <button class="danger" onclick="bukaTolakPesanan('${esc(r.order_sn || kode)}')">Tolak pesanan</button>
         ${r.order_sn ? `<button onclick="bukaSebagian('${esc(r.order_sn)}')">Terima sebagian…</button>` : ''}
       </div>` : ''}
     ${r.belum ? `<table style="margin-top:8px"><thead><tr><th>SKU di label</th><th>Variasi</th><th class="num">Qty</th><th>Sebab</th></tr></thead><tbody>
@@ -316,6 +320,8 @@ function gambarPesanan() {
         <div class="t1 mono">${esc(o.order_sn)}</div>
         <div class="t2 mono">${esc(o.tracking_no || '')}</div>
         <div class="t2">${esc((t.product_name || '').slice(0, 34))}</div>
+        <button type="button" class="danger sm" style="margin-top:10px;width:100%"
+          onclick="event.stopPropagation();bukaTolakPesanan('${esc(o.order_sn)}')">Tolak &amp; laporkan</button>
       </div></div>`;
   }).join('');
 }
@@ -333,27 +339,72 @@ function lihatPesanan(sn) {
       <td class="sm">${esc(i.variation_name || '—')}</td><td class="num"><b>${i.qty_final}</b></td></tr>`).join('')}
     </tbody></table>
     <div class="row" style="margin-top:16px">
-      <button class="danger" onclick="tolakPesananGudang('${esc(o.order_sn)}')">Tolak pesanan</button>
+      <button class="danger" onclick="bukaTolakPesanan('${esc(o.order_sn)}')">Tolak pesanan</button>
       <button onclick="bukaSebagian('${esc(o.order_sn)}')">Terima sebagian…</button>
       <button class="primary" onclick="dlg.close()">Tutup</button>
     </div>`;
   dlg.showModal();
 }
 
-async function tolakPesananGudang(scan) {
+function bukaTolakPesanan(scan) {
   if (!wajibPetugas()) return;
-  const alasan = prompt('Alasan menolak pesanan ' + scan + ':', 'pesanan bukan barang gudang');
-  if (alasan === null) return;
-  if (!alasan.trim()) return pesan('Alasan penolakan wajib diisi.');
-  if (!confirm('Tolak pesanan ' + scan + '?\n\nPesanan akan dibatalkan tanpa mengubah stok.')) return;
+  const o = PESANAN.find(x => x.order_sn === scan || x.tracking_no === scan);
+  const sn = o ? o.order_sn : scan;
+  $('dlgIsi').innerHTML = `<h2>🚫 Tolak pesanan</h2>
+    <p class="mute sm mono" style="margin:2px 0 14px">${esc(sn)}</p>
+    <div class="kotak warn sm" style="margin:0 0 14px">
+      Pesanan akan dibatalkan <b>tanpa mengubah stok</b>. Alasan dan nama petugas otomatis dilaporkan kepada Kepala Admin.
+    </div>
+    <div><label>Alasan penolakan</label>
+      <textarea id="tolakAlasan" rows="3" placeholder="Contoh: pesanan bukan barang gudang">Pesanan bukan barang gudang</textarea>
+    </div>
+    <p class="sm mute" style="margin:8px 0 0">Petugas: <b>${esc(petugas())}</b></p>
+    <p id="tolakStatus" class="sm hide" style="margin:10px 0 0"></p>
+    <div class="row dlg-actions">
+      <button type="button" onclick="dlg.close()">Batal</button>
+      <button type="button" id="btnKirimTolak" class="danger" onclick="kirimTolakPesanan('${esc(scan)}')">Tolak &amp; laporkan</button>
+    </div>`;
+  if (!dlg.open) dlg.showModal();
+  $('tolakAlasan').focus();
+}
+
+async function kirimTolakPesanan(scan) {
+  if (!wajibPetugas()) return;
+  const alasan = $('tolakAlasan').value.trim();
+  const status = $('tolakStatus'), tombol = $('btnKirimTolak');
+  if (alasan.length < 3) {
+    status.textContent = 'Alasan penolakan wajib diisi.';
+    status.className = 'sm'; status.style.color = 'var(--bad)';
+    $('tolakAlasan').focus(); return;
+  }
+  tombol.disabled = true; tombol.textContent = 'Mengirim laporan…';
+  status.textContent = 'Menyimpan penolakan dan mengirim laporan…';
+  status.className = 'sm mute';
   const { data, error } = await rpcAman('gudang_tolak_pesanan', {
-    p_scan:scan, p_alasan:alasan.trim(), p_device:idPerangkat(), p_client_id:idKlien()
+    p_scan:scan, p_alasan:alasan, p_device:idPerangkat(),
+    p_client_id:idKlien(), p_operator:petugas()
   }, true);
-  if (error || !data.ok) return pesan('Gagal: ' + (error ? error.message : data.code));
+  if (error || !data || !data.ok) {
+    const kode = data && data.code;
+    const bantu = kode && PESAN_SALAH[kode] ? PESAN_SALAH[kode][0] : (kode || 'gagal menyimpan');
+    status.textContent = 'Gagal menolak: ' + (error ? error.message : bantu);
+    status.className = 'sm'; status.style.color = 'var(--bad)';
+    tombol.disabled = false; tombol.textContent = 'Coba lagi'; return;
+  }
+  if (data.antre) {
+    dlg.close();
+    $('hasil').innerHTML = `<div class="kotak warn"><h3>⏳ Menunggu koneksi</h3>
+      <p style="margin:0"><b class="mono">${esc(scan)}</b> belum ditolak. Laporan akan dikirim otomatis setelah internet kembali.</p></div>`;
+    bunyi('ulang'); pesan('Penolakan tersimpan di antrean, belum sampai ke Kepala Admin.'); return;
+  }
+  const sn = data.order_sn || scan;
   dlg.close();
-  $('hasil').innerHTML = `<div class="kotak warn"><h3>Pesanan ditolak</h3><p style="margin:0"><b class="mono">${esc(data.order_sn || scan)}</b> dibatalkan. Stok tidak berubah dan Kepala Admin sudah diberi tahu.</p></div>`;
-  PESANAN = PESANAN.filter(o => o.order_sn !== (data.order_sn || scan));
-  gambarPesanan(); bunyi('ulang'); pesan('Pesanan ditolak dan dicatat.');
+  PESANAN = PESANAN.filter(o => o.order_sn !== sn);
+  gambarPesanan();
+  $('hasil').innerHTML = `<div class="kotak ok"><h3>✅ Penolakan berhasil dilaporkan</h3>
+    <p style="margin:0 0 6px"><b class="mono">${esc(sn)}</b> sudah dibatalkan tanpa mengubah stok.</p>
+    <p class="sm" style="margin:0">Kepala Admin menerima alasan <b>${esc(alasan)}</b> dari <b>${esc(petugas())}</b>.</p></div>`;
+  bunyi('ok'); pesan('Pesanan ditolak dan laporan Kepala Admin berhasil dibuat.');
 }
 
 function bukaSebagian(sn) {

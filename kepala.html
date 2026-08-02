@@ -1353,7 +1353,7 @@ async function lencana() {
 const NF_IKON = { sku_tidak_dikenal:'❓', kirim_paksa:'🚚', gudang_tambah:'➕',
   retur_diajukan:'↩️', retur_disetujui:'✅', retur_diterima:'📥',
   opname_diajukan:'📋', stok_masuk_diajukan:'📦', usulan_master_sku:'✏️',
-  koreksi_tinggi:'⚠️', pin_diganti:'🔑' };
+  koreksi_tinggi:'⚠️', pin_diganti:'🔑', pesanan_ditolak:'🚫' };
 
 async function muatNotif() {
   const f = $('nfSaring').value;
@@ -1374,8 +1374,8 @@ async function muatNotif() {
             · ${esc(n.dibuat_oleh||'sistem')} · <span class="tag">${esc(n.jenis)}</span>
             ${n.status==='selesai'?`<span class="tag ok">selesai</span>`:''} ${n.kode_error ? lencanaError(n.kode_error) : ''}</div>
         </div>
-        ${n.status!=='selesai' && n.ref && ['sku_tidak_dikenal','pesanan_ditolak','pesanan_sebagian'].includes(n.jenis)?`<button class="sm danger" onclick="abaikanPesananNotif('${esc(n.ref)}',${n.notif_id})">Tolak pesanan</button>`:''}
-        ${n.status!=='selesai'?`<button class="sm" onclick="tutupNotif(${n.notif_id})">Tandai selesai</button>`:''}
+        ${n.status!=='selesai' && n.ref && ['sku_tidak_dikenal','pesanan_sebagian'].includes(n.jenis)?`<button class="sm danger" onclick="abaikanPesananNotif('${esc(n.ref)}',${n.notif_id})">Tolak pesanan</button>`:''}
+        ${n.status!=='selesai'?`<button class="sm" onclick="bukaTutupNotif(${n.notif_id})">Tandai selesai</button>`:''}
       </div>
       ${rincianNotif(n)}
       ${n.catatan?`<p class="sm mute" style="margin:8px 0 0">Catatan: ${esc(n.catatan)}</p>`:''}
@@ -1410,12 +1410,33 @@ async function abaikanPesananNotif(ref, notifId) {
   await sb.rpc('tutup_notif',{ p_id:notifId, p_catatan:'Pesanan ditolak: '+alasan.trim() });
   pesan('Pesanan ditolak tanpa mengubah stok.'); muatNotif(); muatBermasalah(); lencana();
 }
-async function tutupNotif(id) {
-  const c = prompt('Catatan penyelesaian (boleh dikosongkan):', '');
-  if (c === null) return;
-  const { data, error } = await sb.rpc('tutup_notif', { p_id: id, p_catatan: c || null });
-  if (error || !data.ok) return pesan('Gagal: ' + (error?error.message:data.code));
-  muatNotif(); lencana();
+function bukaTutupNotif(id) {
+  $('dlgIsi').innerHTML = `<h2>✅ Tandai laporan selesai</h2>
+    <p class="sub">Tambahkan catatan bila diperlukan. Catatan boleh dikosongkan.</p>
+    <div><label>Catatan penyelesaian</label>
+      <textarea id="nfCatatan" rows="3" placeholder="Contoh: sudah diperiksa dengan Gudang"></textarea>
+    </div>
+    <p id="nfTutupStatus" class="sm hide" style="margin:10px 0 0"></p>
+    <div class="row dlg-actions">
+      <button type="button" onclick="dlg.close()">Batal</button>
+      <button type="button" id="nfTutupSimpan" class="primary" onclick="simpanTutupNotif(${id})">Simpan &amp; selesai</button>
+    </div>`;
+  dlg.showModal();
+  $('nfCatatan').focus();
+}
+async function simpanTutupNotif(id) {
+  const tombol = $('nfTutupSimpan'), status = $('nfTutupStatus');
+  tombol.disabled = true; tombol.textContent = 'Menyimpan…';
+  const catatan = $('nfCatatan').value.trim();
+  const { data, error } = await sb.rpc('tutup_notif', { p_id:id, p_catatan:catatan || null });
+  if (error || !data || !data.ok) {
+    status.textContent = 'Gagal: ' + (error ? error.message : (data && data.code) || 'tidak diketahui');
+    status.className = 'sm'; status.style.color = 'var(--bad)';
+    tombol.disabled = false; tombol.textContent = 'Coba lagi'; return;
+  }
+  dlg.close();
+  await muatNotif(); await lencana();
+  pesan('Laporan ditandai selesai.');
 }
 $('nfMuat').onclick = muatNotif;
 $('nfSaring').onchange = muatNotif;
