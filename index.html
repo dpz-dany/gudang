@@ -62,7 +62,8 @@ if (!sb) { setLed('off','Belum diatur'); $('belumDiatur').classList.remove('hide
 else { mulaiLed(); }
 
 const NAMA = { admin:'🗂️ Admin Harian', gudang:'📷 Gudang', kepala:'🔑 Kepala Admin' };
-const TUJUAN = { admin:'admin.html', gudang:'gudang.html', kepala:'kepala.html' };
+// URL tanpa .html berjalan konsisten di Cloudflare Pages dan GitHub Pages.
+const TUJUAN = { admin:'admin', gudang:'gudang', kepala:'kepala' };
 let peran = null, pin = '';
 
 // Sesi lama tidak memaksa browser kembali ke halaman peran selama pengujian.

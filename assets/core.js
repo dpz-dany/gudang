@@ -148,7 +148,7 @@ async function autoArahLoginAktif() {
     return !error && data === true;
   } catch (e) { return false; }
 }
-async function keluar() { if (sb) await sb.auth.signOut(); location.href = 'index.html'; }
+async function keluar() { if (sb) await sb.auth.signOut(); location.href = './'; }
 
 /* Penjaga halaman: setiap halaman menyebut peran yang boleh membukanya.
    Ini hanya lapisan tampilan — penegakan sebenarnya ada di RLS Supabase,
@@ -160,9 +160,9 @@ async function jagaHalaman(peranWajib) {
   mulaiLed();
   const { data } = await sb.auth.getSession();
   sesi = data.session;
-  if (!sesi) { location.href = 'index.html?dari=' + encodeURIComponent(location.pathname.split('/').pop()); return false; }
+  if (!sesi) { location.href = './?dari=' + encodeURIComponent(location.pathname.split('/').pop()); return false; }
   const r = await ambilPeran();
-  if (r !== peranWajib && r !== 'kepala') { location.href = 'index.html'; return false; }
+  if (r !== peranWajib && r !== 'kepala') { location.href = './'; return false; }
   const w = $('siapa'); if (w) w.textContent = ({admin:'Admin Harian', gudang:'Gudang', kepala:'Kepala Admin'})[r] || r;
   const nm = $('namaPetugas');
   if (nm) {
