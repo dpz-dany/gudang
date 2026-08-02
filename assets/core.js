@@ -327,7 +327,7 @@ function fotoTanpaBingkai(img) {
 function thumb(u, skuInduk) {
   const s = fotoURL(u, skuInduk);
   return s ? `<div class="thumb"><img src="${esc(s)}" alt="Foto produk" loading="lazy"
-    onload="fotoTanpaBingkai(this)" onerror="this.remove();this.parentElement.textContent='📦'"></div>`
+    onload="fotoTanpaBingkai(this)" onerror="this.parentElement.textContent='📦'"></div>`
            : `<div class="thumb">📦</div>`;
 }
 
