@@ -288,6 +288,7 @@ function fotoTanpaBingkai(img) {
   const tersimpan = statusBingkaiFoto.get(sumber);
   if (tersimpan != null) {
     img.classList.toggle('foto-bingkai-lama', tersimpan);
+    img.parentElement?.classList.toggle('wadah-foto-tanpa-bingkai', tersimpan);
     return;
   }
   try {
@@ -308,6 +309,7 @@ function fotoTanpaBingkai(img) {
     const adaBingkai = cocok >= 3;
     statusBingkaiFoto.set(sumber, adaBingkai);
     img.classList.toggle('foto-bingkai-lama', adaBingkai);
+    img.parentElement?.classList.toggle('wadah-foto-tanpa-bingkai', adaBingkai);
   } catch (_) {
     // URL foto eksternal mungkin tidak dapat diperiksa oleh canvas.
     statusBingkaiFoto.set(sumber, false);

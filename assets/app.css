@@ -103,6 +103,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 /* Pita biru lama berada di 7% bagian atas dan 12% bagian bawah JPG.
    Sembunyikan hanya pada foto yang terdeteksi, tanpa mengubah file aslinya. */
 img.foto-bingkai-lama{clip-path:inset(7% 0 12% 0)}
+.wadah-foto-tanpa-bingkai{background:#fff!important}
 
 /* ---- grid kotak (pesanan / SKU) ---- */
 .boxes{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}
