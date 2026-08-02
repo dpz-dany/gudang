@@ -100,10 +100,14 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .thumb-stok img{width:100%;height:100%;display:block;object-fit:cover}
 .thumb img{width:100%;height:100%;display:block;object-fit:cover}
 
-/* Pita biru lama berada di 7% bagian atas dan 12% bagian bawah JPG.
-   Sembunyikan hanya pada foto yang terdeteksi, tanpa mengubah file aslinya. */
-img.foto-bingkai-lama{clip-path:inset(7.3% 0 12.3% 0)}
-.wadah-foto-tanpa-bingkai{background:#fff!important}
+/* Pita biru lama berada di tepi atas/bawah JPG. Tutup dengan putih agar
+   produk tidak dipotong atau diperbesar dan garis antialias ikut hilang. */
+img.foto-bingkai-lama{clip-path:none}
+.wadah-foto-tanpa-bingkai{background:#fff!important;position:relative}
+.wadah-foto-tanpa-bingkai::before,.wadah-foto-tanpa-bingkai::after{
+  content:"";position:absolute;left:0;right:0;background:#fff;z-index:2;pointer-events:none}
+.wadah-foto-tanpa-bingkai::before{top:0;height:7.5%}
+.wadah-foto-tanpa-bingkai::after{bottom:0;height:12.5%}
 
 /* ---- grid kotak (pesanan / SKU) ---- */
 .boxes{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}
