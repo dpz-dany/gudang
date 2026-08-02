@@ -232,7 +232,7 @@
       <div class="stat"><div class="n" id="hUnit">–</div><div class="l">total unit di gudang</div></div>
     </div>
     <div class="scroll" style="margin-top:14px"><table>
-      <thead><tr><th>SKU</th><th>Produk</th><th>Variasi</th><th class="num">Stok</th><th style="width:170px">Harga satuan</th><th class="num">Nilai</th></tr></thead>
+      <thead><tr><th style="width:78px">Foto</th><th>SKU</th><th>Produk</th><th>Variasi</th><th class="num">Stok</th><th style="width:170px">Harga satuan</th><th class="num">Nilai</th></tr></thead>
       <tbody id="barisHarga"></tbody></table></div>
   </div>
 </section>
@@ -771,18 +771,27 @@ $('eksporStok').onclick = () => unduhCSV('stok_induk_'+hariIni()+'.csv',
 
 /* ---------- harga ---------- */
 async function muatHarga() {
-  $('barisHarga').innerHTML = '<tr><td colspan="6" class="mute" style="padding:16px">Memuat…</td></tr>';
+  $('barisHarga').innerHTML = '<tr><td colspan="7" class="mute" style="padding:16px">Memuat…</td></tr>';
   let all=[], from=0, hal=0;
   while (hal++ < 60) {
     const { data, error } = await sb.rpc('kepala_daftar_harga', { p_offset:from, p_limit:1000 });
     if (error) {
-      $('barisHarga').innerHTML='<tr><td colspan="6" class="bad" style="padding:16px">Gagal memuat harga: '+esc(error.message)+'</td></tr>';
+      $('barisHarga').innerHTML='<tr><td colspan="7" class="bad" style="padding:16px">Gagal memuat harga: '+esc(error.message)+'</td></tr>';
       return;
     }
     if (!data || !data.length) break;
     all = all.concat(data); if (data.length < 1000) break; from += 1000;
   }
-  HARGA = all; gambarHarga();
+  const foto = new Map(); from = 0; hal = 0;
+  while (hal++ < 60) {
+    const { data, error } = await sb.from('v_stock')
+      .select('variation_id,parent_sku,image_url').order('variation_id').range(from, from + 999);
+    if (error) { pesan('Harga termuat, tetapi sebagian foto gagal dimuat.'); break; }
+    (data || []).forEach(r => foto.set(r.variation_id, r));
+    if (!data || data.length < 1000) break; from += 1000;
+  }
+  HARGA = all.map(r => Object.assign(r, foto.get(r.variation_id) || {}));
+  gambarHarga();
 }
 $('muatHarga').onclick = muatHarga;
 $('cariHarga').oninput = gambarHarga;
@@ -797,6 +806,7 @@ function gambarHarga() {
   $('hKosong').textContent = nf(HARGA.filter(r=>r.price==null).length);
   $('hUnit').textContent = nf(HARGA.reduce((s,r)=>s+(+r.stock_on_hand||0),0));
   $('barisHarga').innerHTML = rows.slice(0,400).map(r=>`<tr>
+    <td>${fotoHargaKepala(r)}</td>
     <td class="mono"><b>${esc(r.sku)}</b></td>
     <td class="sm">${esc((r.product_name||'').slice(0,44))}</td>
     <td class="sm">${esc(r.variation_name||'—')}</td>
@@ -804,7 +814,7 @@ function gambarHarga() {
     <td><input class="hrg" data-vid="${esc(r.variation_id)}" type="number" value="${r.price==null?'':r.price}"
         placeholder="kosong" style="min-height:38px;padding:6px 9px;text-align:right"></td>
     <td class="num nilai">${r.price==null?'—':'Rp '+Math.round(r.price*r.stock_on_hand).toLocaleString('id-ID')}</td>
-  </tr>`).join('') || '<tr><td colspan="6" class="mute" style="padding:16px">Tidak ada yang cocok.</td></tr>';
+  </tr>`).join('') || '<tr><td colspan="7" class="mute" style="padding:16px">Tidak ada yang cocok.</td></tr>';
 
   $$('#barisHarga .hrg').forEach(inp => inp.onchange = async () => {
     const vid = inp.dataset.vid, teks = inp.value.trim();
@@ -827,6 +837,12 @@ function gambarHarga() {
     $('hIsi').textContent = nf(HARGA.filter(x=>x.price!=null).length);
     $('hKosong').textContent = nf(HARGA.filter(x=>x.price==null).length);
   });
+}
+function fotoHargaKepala(r) {
+  const src = fotoURL(r.image_url, r.parent_sku);
+  if (!src) return '<div class="thumb-stok">📦</div>';
+  return `<div class="thumb-stok"><img src="${esc(src)}" alt="Foto ${esc(r.parent_sku || r.sku)}" loading="lazy"
+    onerror="this.remove();this.parentElement.textContent='📦'"></div>`;
 }
 $('eksporHarga').onclick = () => unduhCSV('nilai_stok_'+hariIni()+'.csv',
   [['SKU','Produk','Variasi','Stok','Harga','Nilai']]
