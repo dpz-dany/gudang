@@ -278,9 +278,45 @@ function fotoURL(u, skuInduk) {
   if (!berkas) return null;
   return /^https?:/.test(berkas) ? berkas : (CFG.FOLDER_FOTO + berkas.replace(/^\/+/, ''));
 }
+
+/* Sebagian foto lama memiliki bingkai biru EVANO DANY yang sudah menyatu
+   dengan JPG. Deteksi hanya dilakukan pada empat sudut gambar. Foto asli
+   tidak diubah; CSS menyembunyikan pita atas/bawah ketika pola cocok. */
+const statusBingkaiFoto = new Map();
+function fotoTanpaBingkai(img) {
+  const sumber = img.currentSrc || img.src;
+  const tersimpan = statusBingkaiFoto.get(sumber);
+  if (tersimpan != null) {
+    img.classList.toggle('foto-bingkai-lama', tersimpan);
+    return;
+  }
+  try {
+    const c = document.createElement('canvas'); c.width = 4; c.height = 1;
+    const x = c.getContext('2d', { willReadFrequently:true });
+    const w = img.naturalWidth, h = img.naturalHeight;
+    if (!w || !h) return;
+    x.drawImage(img, 0, 0, 1, 1, 0, 0, 1, 1);
+    x.drawImage(img, w - 1, 0, 1, 1, 1, 0, 1, 1);
+    x.drawImage(img, 0, h - 1, 1, 1, 2, 0, 1, 1);
+    x.drawImage(img, w - 1, h - 1, 1, 1, 3, 0, 1, 1);
+    const p = x.getImageData(0, 0, 4, 1).data;
+    let cocok = 0;
+    for (let i = 0; i < 16; i += 4) {
+      const r = p[i], g = p[i + 1], b = p[i + 2];
+      if (r < 18 && g >= 18 && g <= 55 && b >= 60 && b <= 105 && b > g + 28) cocok++;
+    }
+    const adaBingkai = cocok >= 3;
+    statusBingkaiFoto.set(sumber, adaBingkai);
+    img.classList.toggle('foto-bingkai-lama', adaBingkai);
+  } catch (_) {
+    // URL foto eksternal mungkin tidak dapat diperiksa oleh canvas.
+    statusBingkaiFoto.set(sumber, false);
+  }
+}
 function thumb(u, skuInduk) {
   const s = fotoURL(u, skuInduk);
-  return s ? `<div class="thumb" style="background-image:url('${esc(s)}')"></div>`
+  return s ? `<div class="thumb"><img src="${esc(s)}" alt="Foto produk" loading="lazy"
+    onload="fotoTanpaBingkai(this)" onerror="this.remove();this.parentElement.textContent='📦'"></div>`
            : `<div class="thumb">📦</div>`;
 }
 

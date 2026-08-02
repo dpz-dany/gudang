@@ -842,7 +842,7 @@ function fotoHargaKepala(r) {
   const src = fotoURL(r.image_url, r.parent_sku);
   if (!src) return '<div class="thumb-stok">📦</div>';
   return `<div class="thumb-stok"><img src="${esc(src)}" alt="Foto ${esc(r.parent_sku || r.sku)}" loading="lazy"
-    onerror="this.remove();this.parentElement.textContent='📦'"></div>`;
+    onload="fotoTanpaBingkai(this)" onerror="this.remove();this.parentElement.textContent='📦'"></div>`;
 }
 $('eksporHarga').onclick = () => unduhCSV('nilai_stok_'+hariIni()+'.csv',
   [['SKU','Produk','Variasi','Stok','Harga','Nilai']]

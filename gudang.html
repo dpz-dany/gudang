@@ -455,7 +455,7 @@ function fotoStokIndukGudang(g) {
   const src = fotoURL(g.image_url, g.sku_induk);
   if (!src) return '<div class="thumb-stok">📦</div>';
   return `<div class="thumb-stok"><img src="${esc(src)}" alt="Foto ${esc(g.sku_induk)}" loading="lazy"
-    onerror="this.remove();this.parentElement.textContent='📦'"></div>`;
+    onload="fotoTanpaBingkai(this)" onerror="this.remove();this.parentElement.textContent='📦'"></div>`;
 }
 
 async function muatStok() {
