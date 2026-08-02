@@ -100,14 +100,20 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .thumb-stok img{width:100%;height:100%;display:block;object-fit:cover}
 .thumb img{width:100%;height:100%;display:block;object-fit:cover}
 
-/* Pita biru lama berada di tepi atas/bawah JPG. Tutup dengan putih agar
-   produk tidak dipotong atau diperbesar dan garis antialias ikut hilang. */
+/* Tutup hanya bentuk pita biru, bukan seluruh tepi foto. Foto standar tidak
+   dipotong atau diperbesar; isi yang menyentuh tepi tetap terlihat. */
 img.foto-bingkai-lama{clip-path:none}
 .wadah-foto-tanpa-bingkai{background:#fff!important;position:relative}
 .wadah-foto-tanpa-bingkai::before,.wadah-foto-tanpa-bingkai::after{
   content:"";position:absolute;left:0;right:0;background:#fff;z-index:2;pointer-events:none}
-.wadah-foto-tanpa-bingkai::before{top:0;height:7.5%}
-.wadah-foto-tanpa-bingkai::after{bottom:0;height:12.5%}
+.wadah-foto-tanpa-bingkai::before{top:0;height:8.5%;
+  clip-path:polygon(0 0,100% 0,100% 60%,42% 60%,38.7% 98%,0 98%)}
+.wadah-foto-tanpa-bingkai::after{bottom:0;height:14%;
+  clip-path:polygon(56.9% 4%,100% 4%,100% 100%,0 100%,0 64%,53.2% 64%)}
+/* Satu foto lama memakai bingkai penuh di empat sisi. Batas khusus ini hanya
+   membuang border birunya; seluruh produk berada di dalam area putih. */
+img.foto-bingkai-penuh{clip-path:inset(4% 3.5% 14% 3.5%)}
+.wadah-bingkai-penuh::before,.wadah-bingkai-penuh::after{display:none}
 
 /* ---- grid kotak (pesanan / SKU) ---- */
 .boxes{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}

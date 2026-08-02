@@ -280,19 +280,25 @@ function fotoURL(u, skuInduk) {
 }
 
 /* Sebagian foto lama memiliki bingkai biru EVANO DANY yang sudah menyatu
-   dengan JPG. Deteksi hanya dilakukan pada empat sudut gambar. Foto asli
-   tidak diubah; CSS menyembunyikan pita atas/bawah ketika pola cocok. */
+   dengan JPG. Empat sudut mendeteksi bingkai; sampel sisi membedakan satu
+   varian bingkai penuh. Foto asli tidak diubah, hanya tampilannya dibersihkan. */
 const statusBingkaiFoto = new Map();
+function terapkanBingkaiFoto(img, jenis) {
+  const ada = !!jenis, penuh = jenis === 'penuh';
+  img.classList.toggle('foto-bingkai-lama', ada);
+  img.classList.toggle('foto-bingkai-penuh', penuh);
+  img.parentElement?.classList.toggle('wadah-foto-tanpa-bingkai', ada);
+  img.parentElement?.classList.toggle('wadah-bingkai-penuh', penuh);
+}
 function fotoTanpaBingkai(img) {
   const sumber = img.currentSrc || img.src;
   const tersimpan = statusBingkaiFoto.get(sumber);
   if (tersimpan != null) {
-    img.classList.toggle('foto-bingkai-lama', tersimpan);
-    img.parentElement?.classList.toggle('wadah-foto-tanpa-bingkai', tersimpan);
+    terapkanBingkaiFoto(img, tersimpan);
     return;
   }
   try {
-    const c = document.createElement('canvas'); c.width = 4; c.height = 1;
+    const c = document.createElement('canvas'); c.width = 6; c.height = 1;
     const x = c.getContext('2d', { willReadFrequently:true });
     const w = img.naturalWidth, h = img.naturalHeight;
     if (!w || !h) return;
@@ -300,16 +306,19 @@ function fotoTanpaBingkai(img) {
     x.drawImage(img, w - 1, 0, 1, 1, 1, 0, 1, 1);
     x.drawImage(img, 0, h - 1, 1, 1, 2, 0, 1, 1);
     x.drawImage(img, w - 1, h - 1, 1, 1, 3, 0, 1, 1);
-    const p = x.getImageData(0, 0, 4, 1).data;
-    let cocok = 0;
-    for (let i = 0; i < 16; i += 4) {
+    x.drawImage(img, 0, Math.floor(h / 2), 1, 1, 4, 0, 1, 1);
+    x.drawImage(img, w - 1, Math.floor(h / 2), 1, 1, 5, 0, 1, 1);
+    const p = x.getImageData(0, 0, 6, 1).data;
+    const biru = i => {
       const r = p[i], g = p[i + 1], b = p[i + 2];
-      if (r < 18 && g >= 18 && g <= 55 && b >= 60 && b <= 105 && b > g + 28) cocok++;
-    }
+      return r < 18 && g >= 18 && g <= 55 && b >= 60 && b <= 105 && b > g + 28;
+    };
+    let cocok = 0;
+    for (let i = 0; i < 16; i += 4) if (biru(i)) cocok++;
     const adaBingkai = cocok >= 3;
-    statusBingkaiFoto.set(sumber, adaBingkai);
-    img.classList.toggle('foto-bingkai-lama', adaBingkai);
-    img.parentElement?.classList.toggle('wadah-foto-tanpa-bingkai', adaBingkai);
+    const jenis = adaBingkai ? (biru(16) && biru(20) ? 'penuh' : 'standar') : false;
+    statusBingkaiFoto.set(sumber, jenis);
+    terapkanBingkaiFoto(img, jenis);
   } catch (_) {
     // URL foto eksternal mungkin tidak dapat diperiksa oleh canvas.
     statusBingkaiFoto.set(sumber, false);
