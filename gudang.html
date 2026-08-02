@@ -451,6 +451,12 @@ function pendingTipeGudang(vid) {
 function pendingIndukGudang(g) {
   return g.variasi.reduce((n, r) => n + pendingTipeGudang(r.variation_id), 0);
 }
+function fotoStokIndukGudang(g) {
+  const src = fotoURL(g.image_url, g.sku_induk);
+  if (!src) return '<div class="thumb-stok">📦</div>';
+  return `<div class="thumb-stok"><img src="${esc(src)}" alt="Foto ${esc(g.sku_induk)}" loading="lazy"
+    onerror="this.remove();this.parentElement.textContent='📦'"></div>`;
+}
 
 async function muatStok() {
   $('barisMasuk').innerHTML = '<tr><td colspan="5" class="mute" style="padding:16px">Memuat…</td></tr>';
@@ -487,7 +493,8 @@ function gambarMasuk() {
     ' SKU Utama · ' + nf(stokPengajuan.length) + ' pengajuan stok menunggu';
   $('barisMasuk').innerHTML = rows.slice(0,300).map(g => {
     const p = pendingIndukGudang(g);
-    return `<tr><td class="mono"><b>${esc(g.sku_induk)}</b></td>
+    return `<tr><td><div class="row" style="gap:10px;flex-wrap:nowrap">${fotoStokIndukGudang(g)}
+        <b class="mono" style="word-break:break-word">${esc(g.sku_induk)}</b></div></td>
       <td class="sm">${esc((g.product_name || '').slice(0,52))}</td>
       <td class="num">${nf(g.jumlah_tipe)}</td>
       <td class="num"><b>${nf(g.stock_on_hand)}</b>${g.stok_dipinjam ? `<div><span class="tag">${nf(g.stok_dipinjam)} dipinjam</span></div>` : ''}${p ? `<div><span class="tag warn">+${nf(p)} menunggu</span></div>` : ''}</td>
@@ -499,7 +506,7 @@ function bukaStokIndukGudang(id) {
   const g = kelompokStokInduk(stokRows).find(x => x.id === id); if (!g) return;
   const p = pendingIndukGudang(g), info = pesanStokInduk[id] || '';
   $('dlgIsi').innerHTML = `<h2 class="mono">${esc(g.sku_induk)}</h2>
-    <div class="row" style="align-items:flex-start;margin:4px 0 14px">${thumb(g.image_url, g.sku_induk)}
+    <div class="row" style="align-items:flex-start;margin:4px 0 14px">${fotoStokIndukGudang(g)}
       <div><p class="mute sm" style="margin:0">${esc(g.product_name || '')}</p>
       <p class="sm" style="margin:5px 0 0"><b>${nf(g.jumlah_tipe)}</b> tipe SKU · stok aktual <b>${nf(g.stock_on_hand)}</b>${p ? ` · <b style="color:var(--brand)">+${nf(p)} menunggu</b>` : ''}</p></div></div>
     ${info ? `<div class="kotak ok sm" style="margin-bottom:12px">${esc(info)}</div>` : ''}
